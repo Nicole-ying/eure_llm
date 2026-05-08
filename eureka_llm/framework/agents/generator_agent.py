@@ -108,6 +108,16 @@ def validate_generated_code(code: str) -> list[str]:
             issues.append(f"Potential simulator object storage: {pattern}")
             break
 
+    # metrics_fn contract checks
+    if "def metrics_fn(env, action)" not in code:
+        issues.append("metrics_fn signature must be exactly: def metrics_fn(env, action)")
+    if "env.unwrapped" in code:
+        issues.append("Do not use env.unwrapped inside metrics_fn; env is already unwrapped")
+
+    # Common anti-pattern: using physics awake/sleep as task metric or success logic
+    if re.search(r"\.awake\b|sleep", code):
+        issues.append("Avoid awake/sleep engine state in reward/metrics logic")
+
     # Check syntax
     try:
         compile(code, "<generated>", "exec")

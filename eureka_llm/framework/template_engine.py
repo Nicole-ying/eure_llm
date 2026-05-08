@@ -554,6 +554,73 @@ def format_dynamics_section(traj_summary: dict, run_dir: Path = None) -> str:
     return "\n".join(parts)
 
 
+def compute_tdrq_index(traj_summary: dict, run_dir: Path = None) -> dict:
+    """Compute a Training-Dynamics Reward Quality (TDRQ) index in [0, 100].
+
+    TDRQ combines three internal-signal families:
+    1) component balance (avoid single-component domination)
+    2) component activity (avoid dead/inactive reward decomposition)
+    3) exploration health from policy entropy trend (if available)
+    """
+    components = traj_summary.get("components", {})
+    if not components:
+        return {"score": 0.0, "balance": 0.0, "activity": 0.0, "exploration": 0.0}
+
+    means = [abs(v.get("mean", 0.0)) for v in components.values()]
+    total = sum(means)
+    if total < 1e-12:
+        return {"score": 0.0, "balance": 0.0, "activity": 0.0, "exploration": 0.0}
+
+    shares = [m / total for m in means]
+    max_share = max(shares)
+    # 1.0 means well-balanced, 0.0 means one component fully dominates
+    balance = max(0.0, 1.0 - max_share)
+
+    # active if absolute mean is large enough to be meaningful
+    active = sum(1 for m in means if m > 0.01)
+    activity = active / max(1, len(means))
+
+    exploration = 0.5  # neutral default when entropy unavailable
+    if run_dir is not None:
+        entropy_hist = load_entropy_history(run_dir)
+        if entropy_hist:
+            initial = float(entropy_hist[0].get("entropy", 0.0))
+            final = float(entropy_hist[-1].get("entropy", 0.0))
+            if initial > 1e-8:
+                ratio = final / initial
+                # Keep entropy from collapsing (<~0.35) or exploding (>~1.4)
+                if 0.35 <= ratio <= 1.4:
+                    exploration = 1.0
+                elif 0.2 <= ratio <= 1.8:
+                    exploration = 0.6
+                else:
+                    exploration = 0.2
+
+    score = 100.0 * (0.45 * balance + 0.35 * activity + 0.20 * exploration)
+    return {
+        "score": round(score, 2),
+        "balance": round(balance * 100.0, 2),
+        "activity": round(activity * 100.0, 2),
+        "exploration": round(exploration * 100.0, 2),
+    }
+
+
+def format_tdrq_section(traj_summary: dict, run_dir: Path = None) -> str:
+    """Format TDRQ section for perception prompt."""
+    t = compute_tdrq_index(traj_summary, run_dir)
+    lines = [
+        "| TDRQ | Score |",
+        "|------|-------|",
+        f"| overall | {t['score']:.2f} / 100 |",
+        f"| component_balance | {t['balance']:.2f} |",
+        f"| component_activity | {t['activity']:.2f} |",
+        f"| exploration_health | {t['exploration']:.2f} |",
+        "",
+        "Interpretation: <40 = unhealthy reward dynamics, 40-70 = mixed, >70 = healthy.",
+    ]
+    return "\n".join(lines)
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
