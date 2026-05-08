@@ -148,6 +148,7 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
     completed = fell = truncated_count = 0
     lengths = []
     step_metrics: dict[str, list] = {}
+    metrics_errors: list[str] = []
     current_length = 0
 
     obs = env.reset()
@@ -172,6 +173,8 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
                         step_metrics.setdefault(name, []).append(float(value))
             except Exception as e:
                 print(f"  [eval warning] metrics_fn error: {e}")
+                if len(metrics_errors) < 10:
+                    metrics_errors.append(str(e))
                 # metrics_fn is LLM-generated and may have bugs — skip and continue
 
         if dones[0]:
@@ -214,6 +217,8 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
             k: {"mean": round(float(np.mean(v)), 6), "std": round(float(np.std(v)), 6)}
             for k, v in step_metrics.items()
         }
+    if metrics_errors:
+        result["metrics_fn_errors"] = metrics_errors
     return result
 
 

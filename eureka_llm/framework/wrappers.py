@@ -51,8 +51,10 @@ class MetricsTrackingWrapper(gym.Wrapper):
                 metrics = metrics_fn(self.env.unwrapped, action)
                 if isinstance(metrics, dict):
                     info["env_metrics"] = metrics
-            except Exception:
-                pass  # metrics_fn is LLM-generated — silently skip on error
+            except Exception as e:
+                # metrics_fn is LLM-generated. Record the error for debugging instead
+                # of silently dropping it, so prompt/logic issues are observable.
+                info.setdefault("_metrics_fn_errors", []).append(str(e))
         return obs, reward, terminated, truncated, info
 
 
@@ -76,6 +78,7 @@ class ComponentTrackerWrapper(gym.Wrapper):
         self._step_count = 0
         self._components: dict[str, list] = {}
         self._env_metrics: dict[str, list] = {}
+        self._metrics_errors: list[str] = []
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
@@ -86,6 +89,9 @@ class ComponentTrackerWrapper(gym.Wrapper):
 
         for name, value in info.get("env_metrics", {}).items():
             self._env_metrics.setdefault(name, []).append(float(value))
+
+        for err in info.get("_metrics_fn_errors", []):
+            self._metrics_errors.append(str(err))
 
         if terminated or truncated:
             self._save_episode()
@@ -112,6 +118,8 @@ class ComponentTrackerWrapper(gym.Wrapper):
             record["env_metrics_stds"] = {
                 k: round(float(np.std(v)), 6) for k, v in self._env_metrics.items()
             }
+        if self._metrics_errors:
+            record["metrics_fn_errors"] = self._metrics_errors[:5]
         with self._log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
 
