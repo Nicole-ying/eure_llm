@@ -27,6 +27,9 @@ You do NOT propose changes to the reward function. You do NOT write code. You on
 ### Training Dynamics (Component Balance & Stability)
 {dynamics_section}
 
+### TDRQ Index (Training-Dynamics Reward Quality)
+{tdrq_section}
+
 ### Trajectory Summary
 - Episodes logged: {n_traj_episodes}
 - Episode length: mean={traj_len_mean}, min={traj_len_min}, max={traj_len_max}
@@ -54,7 +57,11 @@ Produce a structured markdown report with these sections:
 - In plain language, what is the agent's current strategy?
 - Is it reward hacking? Stuck in a local optimum? Making genuine progress?
 
-### 5. Key Numbers for Budget Calculation
+### 5. TDRQ Diagnosis
+- Explain whether low TDRQ is mainly from imbalance, inactivity, or exploration collapse
+- Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
+
+### 6. Key Numbers for Budget Calculation
 Extract numerical metrics from the Environment Metrics and Behavior Metrics
 tables above for use in reward budget analysis:
 - Any env-specific metrics listed in the Environment Metrics section

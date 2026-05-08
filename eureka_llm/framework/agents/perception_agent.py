@@ -39,6 +39,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         format_component_table,
         format_traj_env_metrics_table,
         format_dynamics_section,
+        format_tdrq_section,
     )
 
     data = load_training_data(run_dir)
@@ -53,6 +54,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         "component_table": format_component_table(data["traj_summary"]),
         "traj_env_metrics_table": format_traj_env_metrics_table(data["traj_summary"]),
         "dynamics_section": format_dynamics_section(data["traj_summary"], run_dir),
+        "tdrq_section": format_tdrq_section(data["traj_summary"], run_dir),
         "n_traj_episodes": str(traj.get("n_episodes", 0)),
         "traj_len_mean": str(lens.get("mean", "?")),
         "traj_len_min": str(lens.get("min", "?")),
@@ -75,7 +77,7 @@ def extract_behavior_metrics(perception_report: str) -> dict:
 
     # Try to extract from "Key Numbers for Budget Calculation" section
     section_match = re.search(
-        r"### 5\. Key Numbers.*?\n(.*?)(?=\n###|\Z)",
+        r"### 6\. Key Numbers.*?\n(.*?)(?=\n###|\Z)",
         perception_report, re.DOTALL
     )
     if section_match:
