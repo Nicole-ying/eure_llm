@@ -1,0 +1,28 @@
+{
+  "diagnosis": "Outcome penalty (-1.0) dominates per-step reward 3.6×, causing agent to learn to fall quickly; purely negative shaped reward provides no positive gradient toward landing",
+  "root_cause_category": "overconstrained",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_shaped",
+      "current_code": "r_shaped = -0.1 * abs(pos_x) - 0.1 * abs(pos_y) - 0.05 * abs(angle) - 0.01 * (vel_x**2 + vel_y**2)",
+      "new_code": "r_shaped = 0.3 * math.exp(-0.5 * abs(pos_x)) + 0.3 * math.exp(-0.5 * abs(pos_y)) + 0.2 * math.exp(-0.2 * (vel_x**2 + vel_y**2)) - 0.05 * abs(angle)",
+      "reason": "Replace purely negative penalties with positive exponential rewards for proximity to pad and low speed; this creates a strong gradient toward the landing zone while maintaining a small angle penalty to encourage upright posture"
+    },
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.02 * (1.0 - abs(angle) / math.pi)",
+      "new_code": "r_alive = 0.1 * (1.0 - abs(angle) / math.pi)",
+      "reason": "Increase alive bonus from 0.02 to 0.1 to provide stronger survival incentive; this helps counteract the 'fall quickly' strategy by making each timestep more valuable"
+    },
+    {
+      "component": "_outcome",
+      "current_code": "components[\"_outcome\"] = -1.0  # crash/failure penalty",
+      "new_code": "components[\"_outcome\"] = -0.1  # crash/failure penalty (reduced 10×)",
+      "reason": "Reduce crash penalty from -1.0 to -0.1 so it no longer dominates the per-step reward; this prevents the agent from learning to terminate early to avoid large negative reward"
+    }
+  ],
+  "predicted_effect": "Agent will learn to stay alive longer (mean episode length increases from 67 to 200+), move toward the landing pad (distance_to_pad decreases from 12.27), and decelerate (speed decreases from 7.40). Completion rate should rise above 0% as the agent discovers landing is beneficial.",
+  "max_risk": "The positive exponential rewards might cause the agent to hover indefinitely near the pad without landing (reward hacking by collecting per-step proximity rewards without committing to touchdown). The alive bonus might also discourage landing if the terminal success bonus (10.0) is not attractive enough.",
+  "risk_mitigation": "Monitor distance_to_pad and speed metrics: if they plateau without reaching landing conditions, increase the landing success bonus from 10.0 to 20.0 or add a small bonus for leg contact. Also track mean_episode_length to ensure it doesn't exceed 500 (indicating hovering)."
+}

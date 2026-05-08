@@ -1,0 +1,28 @@
+{
+  "diagnosis": "Agent reward-hacks by exploiting alive bonus and proximity rewards to hover indefinitely without ever achieving two-legged landing (both_legs_contact=0.0), because the per-step landing bonus is too weak (1.0) and the terminal outcome bonus is subtracted from the total gradient, making it invisible to training.",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_landing",
+      "current_code": "r_landing = both_legs * 1.0  # small bonus per step when landed",
+      "new_code": "r_landing = both_legs * 5.0  # strong bonus per step when both legs contact pad",
+      "reason": "The current 1.0 bonus is too weak to overcome the alive bonus (~0.1 × 290 steps = 29 reward from hovering). Increasing to 5.0 makes landing (~5.0 × 50 steps = 250 reward) far more attractive than hovering, directly incentivizing the agent to achieve two-legged contact."
+    },
+    {
+      "component": "terminal outcome gradient",
+      "current_code": "total = total - components[\"_outcome\"]  # Subtract outcome from total so it doesn't affect gradient",
+      "new_code": "# Outcome is included in total to provide a learning signal for task completion\n# No subtraction needed - the terminal bonus directly shapes policy",
+      "reason": "The current code deliberately removes the terminal outcome from the gradient, making the landing success signal invisible to the policy. By including it in the total, the agent receives a strong learning signal (+10.0 for success) that directly reinforces landing behavior, addressing the root cause of reward hacking."
+    },
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.1 * (1.0 - abs(angle) / math.pi)  # alive bonus proportional to uprightness",
+      "new_code": "r_alive = 0.05 * (1.0 - abs(angle) / math.pi)  # reduced alive bonus to discourage hovering",
+      "reason": "The current alive bonus of 0.1 per step provides ~29 reward over 290 steps, making indefinite hovering more attractive than attempting a risky landing. Reducing to 0.05 halves the hovering incentive while still providing a small survival signal, encouraging the agent to seek the higher-reward landing behavior."
+    }
+  ],
+  "predicted_effect": "The agent will learn to consistently achieve two-legged contact with the landing pad, transitioning from hovering behavior to actual landing. The both_legs_contact metric should rise from 0.0 to >0.5, completion rate should increase from 0% to >80%, and mean episode length should stabilize around 200-400 steps (shorter because episodes end upon successful landing rather than truncation).",
+  "max_risk": "If the landing bonus is too strong relative to the shaped reward, the agent might learn to crash-land (high speed descent onto pad) to get the landing bonus quickly, resulting in high fall rates. The alive bonus reduction might also cause the agent to give up on survival entirely and fall immediately.",
+  "risk_mitigation": "Monitor both_legs_contact and fall_rate metrics closely. If fall_rate exceeds 0.2, the landing bonus should be reduced (e.g., from 5.0 to 3.0) or made conditional on low vertical speed. If completion rate drops below 50% with high fall rate, restore the alive bonus to 0.08 as a compromise. The metrics_fn will detect both failure modes within 100k timesteps."
+}

@@ -1,0 +1,386 @@
+You are the **Analyst Agent** — the core reasoning engine of a multi-agent reward function design system.
+
+You receive:
+1. **Perception Report** — structured observations about the latest training run
+2. **Current Reward Function** — the code that was just trained
+3. **Task Manifest** — environment description, termination conditions, success criteria
+4. **Cross-Round Memory** — causal lessons from previous iterations
+5. **Recent Round History** — summaries of the last 3 rounds
+
+## Your tools
+
+You have access to these tools. When you want to use one, output:
+
+tool_name: tool_input
+
+### Tool 1: query_memory
+Search cross-round memory for relevant lessons.
+Input: a keyword or question
+Output: matching lessons
+
+### Tool 2: calculate_reward_budget
+Estimate whether the current reward function (or a proposed change) would produce positive net reward for the current agent behavior.
+Input: specific coefficient changes to evaluate
+Output: net reward estimate per step
+
+### Tool 3: compare_rounds
+Compare two specific rounds.
+Input: round numbers X and Y
+Output: summary of differences
+
+## Your workflow
+
+You must use a **Thought → Action → Observation → Thought** loop.
+
+Step by step:
+1. **Thought**: Analyze the perception report. What is the key problem?
+2. **Action**: Use a tool to gather more information
+3. **Observation**: What did the tool return?
+4. **Thought**: Interpret the observation. Form a hypothesis.
+5. **Action or Final Answer**: Either gather more info or output your final proposal
+
+## Output format
+
+After your analysis loop, produce a **structured JSON proposal**:
+
+{
+    "diagnosis": "One-sentence summary of the root cause",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <number of changes, max 3>,
+    "proposed_changes": [
+        {
+            "component": "component_name",
+            "current_code": "current line of code",
+            "new_code": "proposed new line of code",
+            "reason": "Why this change fixes the problem"
+        }
+    ],
+    "predicted_effect": "What behavior change do you expect?",
+    "max_risk": "What could go wrong with this change?",
+    "risk_mitigation": "How would we detect or recover from failure?"
+}
+
+## Constraints
+
+- **changed_count ≤ 3**: You can only change at most 3 distinct coefficients or structural elements per round.
+- **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
+- **Include reward budget**: For each change, explain why the net reward will remain positive.
+- **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
+- **Environment ID is always "UnknownEnv"**: Do not try to identify the environment by name.
+
+
+---
+## Current Context
+
+### Current Round: 3
+### Previous Round Results: run_dir = round2
+
+### Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    assert self.lander is not None
+
+    # Update wind and apply to the lander
+    assert self.lander is not None, "You forgot to call reset()"
+    if self.enable_wind and not (
+            self.legs[0].ground_contact or self.legs[1].ground_contact
+    ):
+        wind_mag = (
+                math.tanh(
+                    math.sin(0.02 * self.wind_idx)
+                    + (math.sin(math.pi * 0.01 * self.wind_idx))
+                )
+                * self.wind_power
+        )
+        self.wind_idx += 1
+        self.lander.ApplyForceToCenter(
+            (wind_mag, 0.0),
+            True,
+        )
+
+        torque_mag = math.tanh(
+            math.sin(0.02 * self.torque
+
+### Perception Report
+## Perception Agent Report
+
+### 1. Behavior Trend Summary
+
+- **At early milestones (200k–600k):** The agent never completes the task, always gets truncated (truncation_rate = 1.0). Episode length increases from ~70 to ~336 steps, suggesting it is learning to survive longer but not achieve the objective.
+- **At intermediate milestone (800k):** Completion rate jumps to 0.5; fall rate remains 0; truncation rate drops to 0.5. Mean episode length grows to ~653 steps.
+- **At final milestone (1M):** Completion rate stays at 0.5, truncation rate at 0.5, mean length ~601 steps. The agent is consistently completing half of the episodes without falling, and the other half are truncated (likely timed out or otherwise terminated before success).
+- **Overall trajectory:** Improving from complete failure to 50% success, with no falls. The agent is making genuine progress toward landing.
+
+**Final key figures:**  
+- completion_rate = 0.500  
+- fall_rate = 0.000  
+- mean_length = 601.1
+
+### 2. Critical Metrics
+
+| Metric | Trend | Direction |
+|--------|-------|-----------|
+| **pad_distance_mean** | Steady decrease: 0.98 → 0.37 | ✅ Moving in the right direction (agent gets closer to pad) |
+| **vertical_speed_magnitude_mean** | Sharp drop: 0.91 → 0.15 | ✅ Moving in the right direction (softer landings) |
+| **leg_contact_sum_mean** | Increase: 0.027 → 0.602 | ✅ Moving in the right direction (more leg contact indicates proper landing posture) |
+
+No metric is moving in a wrong direction. Fuel usage increases (0.16 → 0.82), which is expected as the agent learns to use thrust to control descent.
+
+### 3. Reward Component Health
+
+- **Active components:** All five components have mean values significantly non-zero.
+  - r_contact (mean = 0.0136)
+  - r_efficiency (mean = -0.0436)
+  - r_progress (mean = -0.3734)
+  - r_stability (mean = -0.0427)
+  - r_termination (mean = -1.0000)
+- **Dominant component:** r_termination accounts for 67.9% of total reward magnitude, far exceeding any other component (>2× the next largest, r_progress at 25.3%). The constant value of -1.0 per step suggests a stepwise survival penalty.
+- **Inactive/negligible:** None. All components contribute appreciably.
+- **Suspicious values:** r_termination has mean exactly −1.0 with zero standard deviation. This suggests it is a fixed per‑step penalty (e.g., time penalty), not a terminal reward. While not exactly zero, the “perfect” consistency is unusual and may reflect a design choice rather than learning dynamics.
+
+### 4. Behavioral Diagnosis
+
+The agent’s strategy is to descend toward the landing pad, reduce vertical speed, and make leg contact to achieve a soft landing. It succeeds in about half of the episodes; in the other half it likely runs out of time or drifts off course. The agent is making genuine progress—it is not reward hacking or stuck in a local optimum, as evidenced by decreasing pad distance, decreasing vertical speed, and increasing leg contact over training.
+
+### 5. Key Numbers for Budget Calculation
+
+| Metric | Value (final) | Source Table |
+|--------|---------------|--------------|
+| angle_deviation_mean | 0.090946 | Environment Metrics |
+| angle_deviation_std | 0.105358 | Environment Metrics |
+| angvel_change_mean | 0.0 | Environment Metrics |
+| angvel_change_std | 0.0 | Environment Metrics |
+| fuel_used_mean | 0.820496 | Environment Metrics |
+| fuel_used_std | 0.383774 | Environment Metrics |
+| leg_contact_sum_mean | 0.602229 | Environment Metrics |
+| leg_contact_sum_std | 0.833495 | Environment Metrics |
+| pad_distance_mean | 0.37286 | Environment Metrics |
+| pad_distance_std | 0.33947 | Environment Metrics |
+| vertical_speed_magnitude_mean | 0.145199 | Environment Metrics |
+| vertical_speed_magnitude_std | 0.219299 | Environment Metrics |
+| fall_rate | 0.000 | Behavior Metrics |
+| mean_length | 601.1 | Behavior Metrics |
+| completion_rate | 0.500 | Behavior Metrics |
+
+### Current Reward Function
+```python
+"""LLM-generated reward function (round 2).
+Source: round2
+"""
+
+import math
+import numpy as np
+
+"""
+LLM-generated reward function with proposed changes.
+Applies analyst modifications:
+  - Reduce termination failure penalty from -15 to -1.
+  - Increase success reward from 10 to 50.
+  - Expand close-range progress bonus radius from 0.5 to 1.0, coefficient from 1.0 to 2.0.
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    """
+    Dense reward shaping for lunar landing.
+    Encourages: reaching landing pad, upright orientation, low velocity, both legs contact.
+    Returns:
+        total_reward: float
+        components: dict
+    """
+    components = {}
+
+    # Unpack state for convenience
+    x_norm, y_norm, vx_norm, vy_norm, angle, angvel_norm, leg_left, leg_right = state
+
+    # --- 1. Progress toward landing pad ---
+    # Target: x=0 (horizontal center), y=0 (pad altitude)
+    # Use squared distance with a shaping bias to avoid early settling
+    pad_dist = math.sqrt(x_norm**2 + y_norm**2)
+    # Penalty proportional to distance. Typical max pad_dist ~1.5, so max penalty ~ -1.5
+    r_progress = -1.0 * pad_dist
+    # Close-range bonus: expanded zone to radius 1.0 (was 0.5), coefficient doubled to 2.0
+    # At pad_dist=0, bonus = 2.0; at pad_dist=1.0, bonus = 0.0
+    if pad_dist < 1.0:
+        r_progress += 2.0 * (1.0 - pad_dist)  # max extra +2.0 when at pad
+    components['r_progress'] = r_progress
+
+    # --- 2. Stability (angle and angular velocity) ---
+    # Angle target: 0 (upright). Use smallest signed angular difference.
+    ang_diff = math.atan2(math.sin(angle), math.cos(angle))  # wrap to [-pi, pi]
+    # Penalize deviation from zero. Max absolute deviation ~pi, so reward range ~[-1, 0]
+    # Coefficient 0.3 means max penalty ~ -0.94 (pi*0.3)
+    r_stability_angle = -0.3 * abs(ang_diff)
+    # Penalize angular velocity – keep it small (< ~0.5 rad/frame scaled)
+    # Coefficient 0.2, max angular velocity norm ~2.0, so max penalty ~ -0.4
+    r_stability_angvel = -0.2 * abs(angvel_norm)
+    # Combined stability
+    r_stability = r_stability_angle + r_stability_angvel
+    components['r_stability'] = r_stability
+
+    # --- 3. Leg contact (landing success shaping) ---
+    # Reward two legs touching, penalty for only one (tipping)
+    if leg_left and leg_right:
+        r_contact = 1.0  # both down – immediate small reward
+    elif leg_left or leg_right:
+        r_contact = -0.5  # unbalanced – penalty
+    else:
+        r_contact = 0.0
+    components['r_contact'] = r_contact
+
+    # --- 4. Fuel efficiency (penalize excessive thrust) ---
+    # m_power in [0,1] for main, s_power in [0,1] for side
+    # Penalty -0.1 per unit power, max -0.2 per step (both engines full)
+    r_efficiency = -0.1 * (m_power + s_power)
+    components['r_efficiency'] = r_efficiency
+
+    # --- 5. Termination handling ---
+    r_termination = 0.0
+    if terminated:
+        # Determine success or failure
+        # Success: lander not awake AND both legs in contact AND near pad AND low velocity
+        success = (not self.lander.awake and leg_left and leg_right and
+                   abs(ang_diff) < 0.3 and abs(vy_norm) < 0.1 and pad_dist < 0.2)
+        if success:
+            r_termination = 50.0  # large positive reward for successful landing (increased from 10)
+        else:
+            r_termination = -1.0  # reduced from -15 to avoid dominating per-step rewards
+        components['r_termination'] = r_termination
+
+    # --- Sum total reward ---
+    total = sum(components.values())
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics reward-independent.
+    Measures: distance to pad, angular stability, fuel usage, landing success rate (in info),
+    velocity at termination, contact balance.
+    """
+    # Access cross-step state if needed
+    pre = getattr(env, '_pre_step_state', {})
+
+    # Get current physics state
+    lander = env.unwrapped.lander
+    legs = env.unwrapped.legs
+    pos = lander.position
+    vel = lander.linearVelocity
+    angle = lander.angle
+
+    # Normalize to same scale as state[0,1]
+    # Use constants from env (assuming they exist; if not, use typical values)
+    try:
+        SCALE = env.unwrapped.SCALE
+        VIEWPORT_W = env.unwrapped.VIEWPORT_W
+        VIEWPORT_H = env.unwrapped.VIEWPORT_H
+        FPS = env.unwrapped.FPS
+        helipad_y = env.unwrapped.helipad_y
+        LEG_DOWN = env.unwrapped.LEG_DOWN
+    except AttributeError:
+        # Fallback to typical LunarLander constants
+        SCALE = 30.0
+        VIEWPORT_W = 600.0
+        VIEWPORT_H = 400.0
+        FPS = 50.0
+        helipad_y = 0.0
+        LEG_DOWN = 1.0
+
+    x_norm = (pos.x - VIEWPORT_W / SCALE / 2) / (VIEWPORT_W / SCALE / 2)
+    y_norm = (pos.y - (helipad_y + LEG_DOWN / SCALE)) / (VIEWPORT_H / SCALE / 2)
+    vx_norm = vel.x * (VIEWPORT_W / SCALE / 2) / FPS
+    vy_norm = vel.y * (VIEWPORT_H / SCALE / 2) / FPS
+    angvel_norm = 20.0 * lander.angularVelocity / FPS
+
+    # 1. Progress metric: Euclidean distance to pad (normalized)
+    pad_dist = math.sqrt(x_norm**2 + y_norm**2)
+
+    # 2. Stability metric: absolute angle deviation from 0
+    angle_dev = abs(math.atan2(math.sin(angle), math.cos(angle)))
+
+    # 3. Fuel usage: total power applied this step (0-2)
+    # Use action to infer (since power not stored)
+    m_power = 1.0 if action == 2 else 0.0
+    s_power = 1.0 if action in [1, 3] else 0.0
+    fuel = m_power + s_power
+
+    # 4. Landing readiness: combined leg contact (0,1,2)
+    leg_contact = int(legs[0].ground_contact) + int(legs[1].ground_contact)
+
+    # 5. Vertical speed relative to pad – measure of crash risk
+    vert_speed_mag = abs(vy_norm)
+
+    # 6. Cross-step: angular velocity change (if previous state available)
+    prev_angvel = pre.get('_prev_angvel', None)
+# ... (12 more lines)
+```
+
+### Recent Round History
+### Round 1
+Reward: """LLM-generated reward function (round 1). """ """LLM-generated reward function. """     """
+Metrics: completion=0.0, fall=0.0, mean_len=72.3
+Perception: ### 1. Behavior Trend Summary - **Trend:** Flat, no improvement. The agent does not learn to land; it consistently triggers truncation before reaching the landing pad. | Metric | Trend | Assessment |
+Lesson: ## Round 3 Reflection  ### Expected
+
+### Round 2
+Reward: """LLM-generated reward function (round 2). """ """ """     """
+Metrics: completion=0.5, fall=0.0, mean_len=601.1
+Perception: ### 1. Behavior Trend Summary | Metric | Trend | Direction | ### 4. Behavioral Diagnosis
+Lesson: ## Round 4 Reflection  ### Expected
+
+### Round 3
+
+### Cross-Round Lessons (MEMORY.md)
+# Reward Design Memory
+
+This file stores cross-round causal lessons learned during reward function iteration.
+Each entry is a concise lesson: "what changed → what happened → why".
+This file is truncated at 200 lines to fit in context.
+
+**Round 1**: We changed the reward structure by reducing r_termination or adding a progress bonus. This caused no behavioral change because the termination penalty still overwhelmed all other signals — the agent simply minimized episode length by hovering and truncating early. The reason was that the penalty was still 20× larger than any other component, making state distinctions invisible. Next time, we must first neutralize the dominant reward component by either removing the constant termination penalty entirely or rescaling it to be comparable in magnitude to the other rewards.
+
+**Round 2**: We reduced the constant termination penalty from −15 to −1 per step. This caused the agent to learn to approach the pad and land in half of episodes, because the previously dominant signal no longer drowned out other reward components. The reason was that shaping factors (r_progress, r_contact) could now influence the policy. Next time, convert r_progress from a negative penalty (−0.37) into a positive reward for reducing distance and vertical speed, and increase the reward for successful landings to push beyond the 50% plateau.
+
+
+---
+## Begin Your Analysis
+
+Use the Thought → Action → Observation loop.
+
+**Thought:** What is happening? What is the key problem?
+**Action:** query_memory | calculate_reward_budget | compare_rounds
+**Observation:** Tool output
+
+When you have enough information, output your FINAL ANSWER as a JSON proposal:
+
+```json
+{
+    "diagnosis": "...",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <1-3>,
+    "proposed_changes": [...],
+    "predicted_effect": "...",
+    "max_risk": "...",
+    "risk_mitigation": "..."
+}
+```
+
+CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
+metrics_fn MUST be present in the generated code.

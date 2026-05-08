@@ -1,0 +1,34 @@
+{
+  "episodes": 10,
+  "completion_rate": 1.0,
+  "fall_rate": 0.0,
+  "truncation_rate": 0.0,
+  "mean_length": 516.2,
+  "env_metrics": {
+    "landing_quality": {
+      "mean": 0.272271,
+      "std": 0.160731
+    },
+    "stability": {
+      "mean": 0.966478,
+      "std": 0.073984
+    },
+    "fuel_efficiency": {
+      "mean": 0.647036,
+      "std": 0.227812
+    },
+    "descent_quality": {
+      "mean": 0.359173,
+      "std": 0.393553
+    },
+    "drift_quality": {
+      "mean": 0.277498,
+      "std": 0.302218
+    },
+    "approach_quality": {
+      "mean": 0.972121,
+      "std": 0.060936
+    }
+  },
+  "timesteps": 800000
+}

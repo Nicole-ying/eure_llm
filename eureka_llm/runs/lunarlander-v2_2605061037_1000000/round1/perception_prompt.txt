@@ -1,0 +1,87 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Training Data
+
+### Behavior Metrics
+| timesteps | completion_rate | fall_rate | truncation_rate | mean_length |
+|-----------|----------------|-----------|-----------------|-------------|
+| 200000 | 0.000 | 1.000 | 0.000 | 72.1 |
+| 400000 | 0.000 | 1.000 | 0.000 | 70.6 |
+| 600000 | 0.000 | 0.900 | 0.100 | 66.2 |
+| 800000 | 0.000 | 0.900 | 0.100 | 70.1 |
+| 1000000 | 0.000 | 1.000 | 0.000 | 67.2 |
+
+### Environment Metrics
+*(none collected)*
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| _outcome | -0.431117 | 2.435998 | step-level |
+| r_alive | 0.01924 | 0.000563 | step-level |
+| r_landing | 0.007336 | 0.01203 | step-level |
+| r_shaped | -0.124316 | 0.015129 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+| angle_error | 0.119347 | 0.088372 | per-step |
+| both_legs_contact | 0.007336 | 0.01203 | per-step |
+| distance_to_pad | 12.265485 | 1.513137 | per-step |
+| is_alive | 1.0 | 0.0 | per-step |
+| speed | 7.397104 | 1.024853 | per-step |
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| _outcome | -0.4311 | 2.4360 | 74.1% | noisy | major |
+| r_alive | 0.0192 | 0.0006 | 3.3% | stable | active |
+| r_landing | 0.0073 | 0.0120 | 1.3% | stable | inactive |
+| r_shaped | -0.1243 | 0.0151 | 21.4% | stable | active |
+
+**Summary:** 3/4 components active, 0 dominant (>80%), 1 noisy (CV>1.5).
+
+### Policy Entropy Trend
+*(not collected — entropy tracking added in training dynamics update)*
+
+### Trajectory Summary
+- Episodes logged: 13819
+- Episode length: mean=73.5, min=48, max=1070
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: final completion_rate, fall_rate, mean_length
+
+### 2. Critical Metrics
+- List the 3 most important env-specific metrics and their trend
+- Flag any metric that is moving in the wrong direction
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., exactly 0)?
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+
+### 5. Key Numbers for Budget Calculation
+Extract numerical metrics from the Environment Metrics and Behavior Metrics
+tables above for use in reward budget analysis:
+- Any env-specific metrics listed in the Environment Metrics section
+- fall_rate (from Behavior Metrics)
+- mean_length (from Behavior Metrics)
+- completion_rate (from Behavior Metrics)
+
+Output ONLY the report. No code. No proposals.

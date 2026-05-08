@@ -1,0 +1,37 @@
+# PPO config for BipedalWalker-v3 (RL Zoo aligned)
+env_id: "BipedalWalker-v3-round0"
+
+total_timesteps: 5000000
+seed: 42
+device: "cuda:1"
+n_envs: 32
+normalize: true
+max_episode_steps: 1600
+
+evaluation:
+  freq: 500000
+  episodes: 10
+  deterministic: true
+
+checkpoint:
+  freq: 500000
+
+gif_steps:
+  - 500000
+  - 2000000
+  - 5000000
+gif_fps: 30
+gif_max_steps: 2000
+
+ppo:
+  policy: "MlpPolicy"
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_range: 0.18
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5

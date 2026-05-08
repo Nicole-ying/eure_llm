@@ -1,0 +1,256 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes (changed_count ≤ 3)
+2. **Current Reward Function** — the code that needs to be modified
+3. **Task Manifest** — environment description with step() source
+4. **Perception Report** — recent training behavior summary
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- Access env physics via env.unwrapped
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use descriptive task-agnostic names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`, not random suffixes.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+Output the complete code in a single ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function.
+Source: round0
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    """
+    Reward function for Lunar Lander.
+    
+    State dimensions:
+    0: Normalized x-position (center=0, edges=±1)
+    1: Normalized y-position relative to helipad (helipad=0, higher=positive)
+    2: Normalized x-velocity
+    3: Normalized y-velocity
+    4: Angle (radians)
+    5: Angular velocity
+    6: Left leg ground contact (0/1)
+    7: Right leg ground contact (0/1)
+    """
+    components = {}
+    
+    # Primary signal: distance to landing pad
+    # We want the lander near (0, 0) in normalized coordinates
+    # Scale: state[0] and state[1] are in [-1.5, 1.5], so max distance ~2.1
+    # Reward of -1 per unit distance gives reasonable scale
+    dist = math.sqrt(state[0]**2 + state[1]**2)
+    r_distance = -dist * 0.5  # Scaled so typical values are ~[-0.5, 0]
+    components["r_distance"] = r_distance
+    
+    # Small alive bonus to encourage survival during exploration
+    # The agent needs to learn to stay alive before it can land
+    # 0.01 per step = 10 per episode max, negligible compared to termination penalty
+    r_alive = 0.01
+    components["r_alive"] = r_alive
+    
+    total = sum(components.values())
+    
+    # Terminal outcome signal — for evaluation only
+    if terminated:
+        # Success: both legs on ground, near helipad, low velocity
+        # state[6] and state[7] are leg contact flags
+        on_ground = (state[6] > 0.5 and state[7] > 0.5)
+        near_target = dist < 0.3  # Close to helipad
+        low_speed = abs(state[2]) < 0.5 and abs(state[3]) < 0.5  # Slow velocity
+        upright = abs(state[4]) < 0.5  # Nearly vertical
+        
+        if on_ground and near_target and low_speed and upright:
+            components["_outcome"] = 1.0  # Successful landing
+        else:
+            components["_outcome"] = -1.0  # Crash/failure
+        
+        # No modification to total — _outcome is eval-only
+    
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of reward function.
+    """
+    # Access state from environment
+    state = env.lander  # We need to read from the environment
+    
+    # Read the observation from the last step
+    # The state is stored in the environment
+    pos = env.lander.position
+    vel = env.lander.linearVelocity
+    
+    # Distance to helipad center (in world coordinates)
+    helipad_x = 0  # Helipad is at center
+    helipad_y = env.helipad_y + 0.1  # Top of helipad
+    
+    dx = pos.x - helipad_x
+    dy = pos.y - helipad_y
+    distance_to_pad = math.sqrt(dx*dx + dy*dy)
+    
+    # Speed magnitude
+    speed = math.sqrt(vel.x**2 + vel.y**2)
+    
+    # Angle from vertical (absolute)
+    angle_from_vertical = abs(env.lander.angle)
+    
+    # Ground contact status
+    left_contact = 1.0 if env.legs[0].ground_contact else 0.0
+    right_contact = 1.0 if env.legs[1].ground_contact else 0.0
+    both_legs_down = left_contact * right_contact  # 1 if both, 0 otherwise
+    
+    # Is the lander awake? (not sleeping = still in motion)
+    awake = 1.0 if env.lander.awake else 0.0
+    
+    return {
+        "distance_to_pad": distance_to_pad,
+        "speed": speed,
+        "angle_from_vertical": angle_from_vertical,
+        "both_legs_down": both_legs_down,
+        "awake": awake,
+        "altitude": pos.y - env.helipad_y,  # Height above helipad
+    }
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The agent receives overwhelming negative reward from distance penalty and terminal failure, with negligible survival incentive (r_alive=0.01), causing it to fall quickly rather than explore landing strategies.",
+  "root_cause_category": "overconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.01",
+      "new_code": "r_alive = 0.05",
+      "reason": "Increases survival incentive from negligible (0.01 per step = 0.63 per episode) to meaningful (0.05 per step = 3.15 per episode), giving the agent a reason to stay alive longer and explore landing strategies."
+    },
+    {
+      "component": "r_distance",
+      "current_code": "r_distance = -dist * 0.5",
+      "new_code": "r_distance = -dist * 0.3",
+      "reason": "Reduces the distance penalty scaling from 0.5 to 0.3, making it less punishing for the agent to explore away from the helipad. This prevents the agent from being overly constrained to a narrow region before it has learned to control its descent."
+    }
+  ],
+  "predicted_effect": "The agent will survive longer (mean episode length increases from ~63 to ~100+), explore more of the state space, and begin to learn basic flight control before attempting landing. The completion rate should rise above 0% as the agent starts to occasionally achieve landing configurations.",
+  "max_risk": "The agent might learn to hover indefinitely (exploit the alive bonus) without attempting to land, leading to very long episodes with no landing progress. The distance penalty might become too weak to guide the agent toward the pad.",
+  "risk_mitigation": "Monitor mean episode length — if it exceeds 300 without improvement in completion rate, the alive bonus is too high. Also monitor distance_to_pad_mean — if it increases significantly, the distance penalty needs to be strengthened. The metrics_fn will track both of these."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    assert self.lander is not None
+
+    # Update wind and apply to the lander
+    assert self.lander is not None, "You forgot to call reset()"
+    if self.enable_wind and not (
+            self.legs[0].ground_contact or self.legs[1].ground_contact
+    ):
+        wind_mag = (
+                math.tanh(
+                    math.sin(0.02 * self.wind_idx)
+                    + (math.sin(math.pi * 0.01 * self.wind_idx))
+                )
+                * self.wind_power
+        )
+        self.wind_idx += 1
+        self.lander.ApplyForceToCenter(
+            (wind_mag, 0.0),
+            True,
+        )
+
+        torque_mag = math.tanh(
+            math.sin(0.02 * self.torque_idx)
+            + (math.sin(math.pi * 0.01 * self.torque_idx))
+        ) * (self.turbulence_power)
+        self.torque_idx += 1
+        self.lander.ApplyTorque(
+            (torque_mag),
+            True,
+        )
+
+    if self.continuous:
+        action = np.clip(action, -1, +1).astype(np.float32)
+    else:
+        assert self.action_space.contains(
+            action
+        ), f"{action!r} ({type(action)}) invalid "
+
+    # Apply Engine Impulses
+
+    # Tip is a the (X and Y) components of the rotation of the lander.
+    tip = (math.sin(self.lander.angle), math.cos(self.lander.angle))
+
+    # Side is the (-Y and X) components of the rotation of the lander.
+    side = (-tip[1], tip[0])
+
+    # Generate two random numbers between -1/SCALE and 1/SCALE.
+    dispersion = [self.np_random.uniform(-1.0, +1.0) / SCALE for _ in range(2)]
+
+    m_power = 0.0
+    if (self.continuous and action[0] > 0.0) or (
+            not self.continuous and action == 2
+    ):
+        # Main engine
+        if se

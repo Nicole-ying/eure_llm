@@ -1,0 +1,54 @@
+{
+  "env_id": "MountainCarContinuous-v0",
+  "spaces": {
+    "observation": {
+      "shape": [
+        2
+      ],
+      "low": -1.2,
+      "high": 0.6
+    },
+    "action": {
+      "type": "Box",
+      "shape": [
+        1
+      ],
+      "n": null
+    }
+  },
+  "obs_dim": 2,
+  "episode_length_stats": {
+    "mean": 1000.0,
+    "std": 0.0,
+    "min": 1000,
+    "max": 1000
+  },
+  "termination_summary": {
+    "max_steps": {
+      "count": 30,
+      "fraction": 1.0
+    }
+  },
+  "info_keys": {},
+  "obs_dim_stats": [
+    {
+      "dim": 0,
+      "space_low": -1.2,
+      "space_high": 0.6,
+      "mean": -0.522442,
+      "std": 0.172587,
+      "sample_min": -1.2,
+      "sample_max": 0.169955
+    },
+    {
+      "dim": 1,
+      "space_low": -0.07,
+      "space_high": 0.07,
+      "mean": -5.3e-05,
+      "std": 0.013702,
+      "sample_min": -0.051046,
+      "sample_max": 0.050975
+    }
+  ],
+  "max_episode_steps": 1000
+}

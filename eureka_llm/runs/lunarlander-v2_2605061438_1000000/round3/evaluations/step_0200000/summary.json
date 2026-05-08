@@ -1,0 +1,38 @@
+{
+  "episodes": 10,
+  "completion_rate": 1.0,
+  "fall_rate": 0.0,
+  "truncation_rate": 0.0,
+  "mean_length": 1000.0,
+  "env_metrics": {
+    "distance_to_pad": {
+      "mean": 43.60603,
+      "std": 15.387758
+    },
+    "speed": {
+      "mean": 2.926872,
+      "std": 1.245393
+    },
+    "angle_from_vertical": {
+      "mean": 0.045519,
+      "std": 0.056695
+    },
+    "both_legs_down": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "altitude": {
+      "mean": 42.147372,
+      "std": 16.300456
+    },
+    "angular_velocity": {
+      "mean": 0.067837,
+      "std": 0.077545
+    },
+    "total_thrust": {
+      "mean": 0.9848,
+      "std": 0.122348
+    }
+  },
+  "timesteps": 200000
+}

@@ -1,0 +1,31 @@
+# PPO config for 100K timestep GPU testing (fast end-to-end)
+env_id: "BipedalWalker-v3-round0"
+total_timesteps: 100000
+device: "cuda"
+n_envs: 8
+normalize: true
+
+evaluation:
+  freq: 50000
+  episodes: 5
+  deterministic: true
+
+# Disabled features
+checkpoint:
+  freq: 999999999
+gif_steps: []
+gif_fps: 30
+gif_max_steps: 2000
+
+ppo:
+  policy: "MlpPolicy"
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.999
+  gae_lambda: 0.95
+  clip_range: 0.18
+  ent_coef: 0.0
+  vf_coef: 0.5
+  max_grad_norm: 0.5

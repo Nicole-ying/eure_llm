@@ -1,0 +1,141 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Training Data
+
+### Behavior Metrics
+| timesteps | completion_rate | fall_rate | truncation_rate | mean_length |
+|-----------|----------------|-----------|-----------------|-------------|
+| 200000 | 0.000 | 1.000 | 0.000 | 626.7 |
+| 400000 | 0.900 | 0.100 | 0.000 | 929.8 |
+| 600000 | 1.000 | 0.000 | 0.000 | 330.0 |
+| 800000 | 0.700 | 0.300 | 0.000 | 424.2 |
+| 1000000 | 0.800 | 0.200 | 0.000 | 797.1 |
+
+### Environment Metrics
+| timesteps | altitude_mean | altitude_std |
+|-----------|-------------|-------------|
+| 200000 | 12.772598 | 2.095976 |
+| 400000 | 2.877501 | 2.606409 |
+| 600000 | 3.627814 | 2.938962 |
+| 800000 | 2.663849 | 2.762311 |
+| 1000000 | 1.746701 | 2.438536 |
+
+| timesteps | angle_from_vertical_mean | angle_from_vertical_std |
+|-----------|-------------|-------------|
+| 200000 | 0.02662 | 0.027135 |
+| 400000 | 0.043636 | 0.068015 |
+| 600000 | 0.060944 | 0.071706 |
+| 800000 | 0.035794 | 0.051304 |
+| 1000000 | 0.037857 | 0.077351 |
+
+| timesteps | angular_velocity_mean | angular_velocity_std |
+|-----------|-------------|-------------|
+| 200000 | 0.051166 | 0.04723 |
+| 400000 | 0.076862 | 0.124374 |
+| 600000 | 0.111441 | 0.137285 |
+| 800000 | 0.069505 | 0.108428 |
+| 1000000 | 0.061761 | 0.145256 |
+
+| timesteps | both_legs_down_mean | both_legs_down_std |
+|-----------|-------------|-------------|
+| 200000 | 0.0 | 0.0 |
+| 400000 | 0.024952 | 0.155978 |
+| 600000 | 0.132727 | 0.33928 |
+| 800000 | 0.325554 | 0.468581 |
+| 1000000 | 0.580605 | 0.49346 |
+
+| timesteps | distance_to_pad_mean | distance_to_pad_std |
+|-----------|-------------|-------------|
+| 200000 | 14.281039 | 1.247956 |
+| 400000 | 8.438545 | 1.727012 |
+| 600000 | 10.291302 | 1.62193 |
+| 800000 | 9.973593 | 1.483482 |
+| 1000000 | 10.367926 | 1.231144 |
+
+| timesteps | speed_mean | speed_std |
+|-----------|-------------|-------------|
+| 200000 | 1.081763 | 0.566423 |
+| 400000 | 0.75642 | 0.758531 |
+| 600000 | 1.668324 | 1.134438 |
+| 800000 | 1.244927 | 1.282001 |
+| 1000000 | 0.790665 | 1.27383 |
+
+| timesteps | total_thrust_mean | total_thrust_std |
+|-----------|-------------|-------------|
+| 200000 | 1.0 | 0.0 |
+| 400000 | 0.868144 | 0.338334 |
+| 600000 | 0.832424 | 0.373489 |
+| 800000 | 0.820368 | 0.383881 |
+| 1000000 | 0.651988 | 0.47634 |
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| _outcome | -0.58309 | 0.812407 | step-level |
+| r_alive | 0.5 | 0.0 | step-level |
+| r_angle | -0.077409 | 0.089101 | step-level |
+| r_distance | -0.035638 | 0.021896 | step-level |
+| r_progress | 0.563988 | 0.695677 | step-level |
+| r_speed | -0.150442 | 0.111258 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+*(not available — training env_metrics collection requires MetricsTrackingWrapper)*
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| _outcome | -0.5831 | 0.8124 | 30.5% | variable | active |
+| r_alive | 0.5000 | 0.0000 | 26.2% | stable | active |
+| r_angle | -0.0774 | 0.0891 | 4.1% | variable | active |
+| r_distance | -0.0356 | 0.0219 | 1.9% | variable | active |
+| r_progress | 0.5640 | 0.6957 | 29.5% | variable | active |
+| r_speed | -0.1504 | 0.1113 | 7.9% | variable | active |
+
+**Summary:** 6/6 components active, 0 dominant (>80%), 0 noisy (CV>1.5).
+
+### Policy Entropy Trend
+*(not collected — entropy tracking added in training dynamics update)*
+
+### Trajectory Summary
+- Episodes logged: 2120
+- Episode length: mean=468.5, min=56, max=1951
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: final completion_rate, fall_rate, mean_length
+
+### 2. Critical Metrics
+- List the 3 most important env-specific metrics and their trend
+- Flag any metric that is moving in the wrong direction
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., exactly 0)?
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+
+### 5. Key Numbers for Budget Calculation
+Extract numerical metrics from the Environment Metrics and Behavior Metrics
+tables above for use in reward budget analysis:
+- Any env-specific metrics listed in the Environment Metrics section
+- fall_rate (from Behavior Metrics)
+- mean_length (from Behavior Metrics)
+- completion_rate (from Behavior Metrics)
+
+Output ONLY the report. No code. No proposals.

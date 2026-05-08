@@ -1,0 +1,28 @@
+{
+  "diagnosis": "The agent is stuck in a local optimum: it collects high per-step progress reward by hovering near the pad without landing, and the angular velocity penalty prevents side-thruster use needed for fine orientation and leg contact.",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_stability_angvel",
+      "current_code": "r_stability_angvel = -0.05 * abs(angvel_norm)",
+      "new_code": "r_stability_angvel = 0.0  # removed penalty to allow rotation",
+      "reason": "Zero angular velocity change indicates the penalty discouraged all side-thruster use. Removing it will allow the agent to rotate and adjust orientation for landing."
+    },
+    {
+      "component": "r_progress",
+      "current_code": "if pad_dist < 1.0:\n    r_progress = 2.0 * (1.0 - pad_dist)\nelse:\n    r_progress = 0.0",
+      "new_code": "if pad_dist < 0.2:\n    r_progress = 0.0  # no reward once very close, forcing landing\nelif pad_dist < 1.0:\n    r_progress = 2.0 * (1.0 - pad_dist)\nelse:\n    r_progress = 0.0",
+      "reason": "The agent collects progress reward by hovering near the pad. Zeroing it out at very close distance removes the incentive to stay there and encourages finishing the landing."
+    },
+    {
+      "component": "new component: r_landing_shaping",
+      "current_code": "not present",
+      "new_code": "# --- 6. Landing shaping: per-step reward for near-landing configuration\nr_landing_shaping = 0.0\nif leg_left and leg_right and pad_dist < 0.3 and abs(vy_norm) < 0.1:\n    r_landing_shaping = 5.0\ncomponents['r_landing_shaping'] = r_landing_shaping",
+      "reason": "Provides a strong per-step incentive to achieve the final landing configuration (both legs, low speed, near pad). This bridges the gap between progress reward and the terminal bonus, making completion more attractive."
+    }
+  ],
+  "predicted_effect": "The agent will begin using side thrusters to align itself, descend to the pad, and land with both legs. Completion rate should increase significantly (target >0.50), while fuel usage may decrease due to more efficient landing. Truncations will drop.",
+  "max_risk": "The landing shaping reward could cause the agent to oscillate in and out of the contact state to collect reward repeatedly, or it might trigger reward hacking if the agent can repeatedly bounce on the pad. Also, removing the angular velocity penalty could lead to unstable spinning if the angle deviation penalty is insufficient.",
+  "risk_mitigation": "Monitor the leg contact frequency and angular velocity variance after training. If angular velocity becomes large, reinstate a small penalty (e.g., -0.01 * |angvel_norm|) or only penalize when |angvel_norm| > 1.0. If bouncing occurs, add a condition that the shaping reward is only given once per episode (use a flag) or only when the lander is settled (check if lander.awake is False)."
+}

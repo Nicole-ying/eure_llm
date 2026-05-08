@@ -1,0 +1,22 @@
+{
+  "diagnosis": "The reward function provides no directional guidance — the constant alive bonus (0.01) and weak proximity penalty (-abs(pos_y)*0.2) give the agent no incentive to move toward the pad, stabilize orientation, or reduce speed, causing it to fall immediately with no improvement.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_proximity → r_shaped",
+      "current_code": "r_proximity = -abs(pos_y) * 0.2  # penalty for being far from pad",
+      "new_code": "r_shaped = -0.1 * abs(pos_x) - 0.1 * abs(pos_y) - 0.05 * abs(angle) - 0.01 * (vel_x**2 + vel_y**2)  # shaped reward for position, orientation, and speed",
+      "reason": "The old proximity only penalized vertical distance, giving no gradient for horizontal movement, orientation, or speed control. The new shaped reward provides a clear gradient toward: centered (x=0), at pad level (y=0), upright (angle=0), and slow (low velocity) — all necessary for a successful landing."
+    },
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.01  # small positive reward for surviving each step",
+      "new_code": "r_alive = 0.02 * (1.0 - abs(angle) / math.pi)  # alive bonus proportional to how upright the agent is (max 0.02 when upright, 0 when inverted)",
+      "reason": "The constant alive bonus (0.01) gave no incentive to stay upright — the agent received the same reward whether stable or tumbling. The new conditional bonus rewards the agent for maintaining an upright orientation, directly addressing the high angle_error (1.20 radians) and encouraging stability."
+    }
+  ],
+  "predicted_effect": "The agent will learn to: (1) move toward the center of the pad (reducing distance_to_pad from 12.86), (2) maintain an upright orientation (reducing angle_error from 1.20), (3) reduce speed when approaching the pad, and (4) eventually achieve successful landings. The shaped reward creates a smooth gradient that guides the agent through the task, rather than a sparse signal that only penalizes failure.",
+  "max_risk": "The new shaped reward coefficients might be too large relative to the alive bonus, causing the agent to focus entirely on position/velocity minimization without learning to land gently. Alternatively, if coefficients are too small, the gradient may be too weak to overcome the alive bonus, resulting in no improvement.",
+  "risk_mitigation": "Monitor the mean values of each reward component after 100K steps. If r_shaped dominates (>90% of total reward magnitude), reduce coefficients by 50%. If the agent still falls immediately, increase the alive bonus coefficient or add a small bonus for leg ground contact during flight. The metrics_fn will track distance_to_pad, speed, and angle_error to detect stagnation."
+}

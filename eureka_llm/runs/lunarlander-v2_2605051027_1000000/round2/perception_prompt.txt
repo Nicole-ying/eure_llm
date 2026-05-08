@@ -1,0 +1,140 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Training Data
+
+### Behavior Metrics
+| timesteps | completion_rate | fall_rate | truncation_rate | mean_length |
+|-----------|----------------|-----------|-----------------|-------------|
+| 200000 | 0.000 | 0.000 | 1.000 | 70.2 |
+| 400000 | 0.000 | 0.000 | 1.000 | 84.6 |
+| 600000 | 0.000 | 0.000 | 1.000 | 336.0 |
+| 800000 | 0.500 | 0.000 | 0.500 | 653.2 |
+| 1000000 | 0.500 | 0.000 | 0.500 | 601.1 |
+
+### Environment Metrics
+| timesteps | angle_deviation_mean | angle_deviation_std |
+|-----------|-------------|-------------|
+| 200000 | 0.105798 | 0.088821 |
+| 400000 | 0.057421 | 0.039544 |
+| 600000 | 0.095528 | 0.109253 |
+| 800000 | 0.071629 | 0.090669 |
+| 1000000 | 0.090946 | 0.105358 |
+
+| timesteps | angvel_change_mean | angvel_change_std |
+|-----------|-------------|-------------|
+| 200000 | 0.0 | 0.0 |
+| 400000 | 0.0 | 0.0 |
+| 600000 | 0.0 | 0.0 |
+| 800000 | 0.0 | 0.0 |
+| 1000000 | 0.0 | 0.0 |
+
+| timesteps | fuel_used_mean | fuel_used_std |
+|-----------|-------------|-------------|
+| 200000 | 0.15812 | 0.364853 |
+| 400000 | 0.377069 | 0.484652 |
+| 600000 | 0.755357 | 0.429875 |
+| 800000 | 0.744489 | 0.436148 |
+| 1000000 | 0.820496 | 0.383774 |
+
+| timesteps | leg_contact_sum_mean | leg_contact_sum_std |
+|-----------|-------------|-------------|
+| 200000 | 0.027066 | 0.20144 |
+| 400000 | 0.053191 | 0.296963 |
+| 600000 | 0.258036 | 0.585358 |
+| 800000 | 0.469382 | 0.747815 |
+| 1000000 | 0.602229 | 0.833495 |
+
+| timesteps | pad_distance_mean | pad_distance_std |
+|-----------|-------------|-------------|
+| 200000 | 0.984782 | 0.407142 |
+| 400000 | 0.927241 | 0.451575 |
+| 600000 | 0.651304 | 0.341317 |
+| 800000 | 0.377004 | 0.302652 |
+| 1000000 | 0.37286 | 0.33947 |
+
+| timesteps | vertical_speed_magnitude_mean | vertical_speed_magnitude_std |
+|-----------|-------------|-------------|
+| 200000 | 0.907728 | 0.509102 |
+| 400000 | 0.774992 | 0.393844 |
+| 600000 | 0.206084 | 0.305404 |
+| 800000 | 0.128067 | 0.212291 |
+| 1000000 | 0.145199 | 0.219299 |
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| r_contact | 0.01358 | 0.037432 | step-level |
+| r_efficiency | -0.043615 | 0.019502 | step-level |
+| r_progress | -0.373405 | 0.486995 | step-level |
+| r_stability | -0.042671 | 0.042182 | step-level |
+| r_termination | -1.0 | 0.0 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+*(not available — training env_metrics collection requires MetricsTrackingWrapper)*
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| r_contact | 0.0136 | 0.0374 | 0.9% | noisy | active |
+| r_efficiency | -0.0436 | 0.0195 | 3.0% | stable | active |
+| r_progress | -0.3734 | 0.4870 | 25.3% | variable | active |
+| r_stability | -0.0427 | 0.0422 | 2.9% | variable | active |
+| r_termination | -1.0000 | 0.0000 | 67.9% | stable | major |
+
+**Summary:** 5/5 components active, 0 dominant (>80%), 1 noisy (CV>1.5).
+
+### Policy Entropy Trend
+| Step | Entropy |
+|------|---------|
+| 200000 | 0.5892 |
+| 400000 | 0.5193 |
+| 600000 | 0.4703 |
+| 800000 | 0.3478 |
+| 1000000 | 0.5439 |
+
+**Trend:** stable (0.5892 → 0.5439)
+**Assessment:** Policy maintains exploration.
+
+### Trajectory Summary
+- Episodes logged: 7302
+- Episode length: mean=136.9, min=50, max=1860
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: final completion_rate, fall_rate, mean_length
+
+### 2. Critical Metrics
+- List the 3 most important env-specific metrics and their trend
+- Flag any metric that is moving in the wrong direction
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., exactly 0)?
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+
+### 5. Key Numbers for Budget Calculation
+Extract numerical metrics from the Environment Metrics and Behavior Metrics
+tables above for use in reward budget analysis:
+- Any env-specific metrics listed in the Environment Metrics section
+- fall_rate (from Behavior Metrics)
+- mean_length (from Behavior Metrics)
+- completion_rate (from Behavior Metrics)
+
+Output ONLY the report. No code. No proposals.

@@ -1,0 +1,8 @@
+{
+  "episodes": 10,
+  "completion_rate": 0.1,
+  "fall_rate": 0.0,
+  "truncation_rate": 0.9,
+  "mean_length": 884.5,
+  "timesteps": 200000
+}

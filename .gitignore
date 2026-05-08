@@ -1,0 +1,20 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Large model/checkpoint files (* matches any directory depth)
+*.zip
+*.pkl
+
+# Experiment logs
+experiment.log
+train_error.log
+*.log
+
+# Generated media
+gifs/
+
+# OS files
+.DS_Store
+Thumbs.db

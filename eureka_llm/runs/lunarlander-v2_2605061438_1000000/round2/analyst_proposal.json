@@ -1,0 +1,28 @@
+{
+  "diagnosis": "The agent is stuck in a local optimum where it falls slowly (mean length ~78) because the per-step alive bonus (0.05) is too weak to incentivize survival, the distance penalty (-0.1 * dist) overwhelms the alive bonus, and there is no positive landing reward to create a goal gradient toward the pad.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.05",
+      "new_code": "r_alive = 0.5",
+      "reason": "Increase alive bonus 10x from 0.05 to 0.5 to create a strong incentive for the agent to stay alive longer, which is the first prerequisite for learning to land. At 0.5 per step, the agent gets +39 per episode (78 steps) instead of +3.9, making survival the dominant per-step signal."
+    },
+    {
+      "component": "r_distance",
+      "current_code": "r_distance = -dist * 0.1",
+      "new_code": "r_distance = -dist * 0.05",
+      "reason": "Reduce distance penalty coefficient from 0.1 to 0.05 to prevent it from overwhelming the alive bonus. At current distance (~12), the penalty drops from -1.2 to -0.6 per step, allowing the alive bonus to dominate and giving the agent room to explore without being heavily penalized."
+    },
+    {
+      "component": "r_landing (new component)",
+      "current_code": "(not present)",
+      "new_code": "r_landing = 10.0 if (state[6] > 0.5 and state[7] > 0.5) else 0.0",
+      "reason": "Add a new positive landing reward of +10 when both legs are on the ground. This creates a clear positive goal signal that the agent can work toward, in contrast to the current purely negative reward landscape. The +10 is large enough to overcome the per-step penalties from falling."
+    }
+  ],
+  "predicted_effect": "The agent will initially stay alive longer (episode length increases from ~78 to ~150+) as the alive bonus incentivizes survival. Over time, the agent will learn to approach the landing pad to collect the +10 landing reward, resulting in decreasing distance_to_pad and increasing both_legs_down_mean. Completion rate should rise from 0.0 to 0.3+ within 3-5 rounds.",
+  "max_risk": "The increased alive bonus (0.5) might cause the agent to learn to hover indefinitely without attempting to land, especially if the landing reward is too difficult to reach. The agent could get stuck in a 'stay alive forever' local optimum where it avoids the pad to avoid crashing.",
+  "risk_mitigation": "Monitor both_legs_down_mean and distance_to_pad_mean. If both_legs_down_mean remains at 0.0 after 3 rounds despite increased episode length, reduce r_alive back to 0.3 or increase r_landing to +20. Also monitor mean_length - if it exceeds 300 without landing attempts, the alive bonus is too strong."
+}

@@ -1,0 +1,28 @@
+{
+  "diagnosis": "Agent converges to a safe hover that never lands because the per-step rewards (progress, efficiency) are too weak to overcome the constant termination penalty, and the bonus for reaching the pad is too small and threshold too tight.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_progress",
+      "current_code": "r_progress = -0.5 * pad_dist\nif pad_dist < 0.1:\n    r_progress += 0.5 * (0.1 - pad_dist)",
+      "new_code": "r_progress = -1.0 * pad_dist\nif pad_dist < 0.5:\n    r_progress += 1.0 * (0.5 - pad_dist)",
+      "reason": "Doubles the penalty for being far from the pad and expands the close-range reward zone, strongly incentivizing the agent to reduce pad_distance."
+    },
+    {
+      "component": "r_efficiency",
+      "current_code": "r_efficiency = -0.3 * (m_power + s_power)",
+      "new_code": "r_efficiency = -0.1 * (m_power + s_power)",
+      "reason": "Reduces the fuel penalty by a factor of 3, allowing the agent to use thrusters more freely for maneuvering toward the pad without incurring large negative rewards."
+    },
+    {
+      "component": "r_termination",
+      "current_code": "r_termination = -5.0",
+      "new_code": "r_termination = -15.0",
+      "reason": "Increases the termination penalty from -5 to -15 to make the constant negative outcome more salient, pushing the agent to avoid truncation by landing successfully. Combined with increased progress incentives, this creates a stronger drive to complete the landing."
+    }
+  ],
+  "predicted_effect": "The agent will start moving horizontally toward the pad, descend more aggressively, and eventually attempt landing. The larger termination penalty and stronger progress gradient should break the safe-hover local optimum.",
+  "max_risk": "The agent may crash more frequently (increased fall_rate) if it descends too fast or tilts excessively while maneuvering, leading to high-speed ground contact.",
+  "risk_mitigation": "Monitor fall_rate and leg_contact metrics closely. If fall_rate rises above 0.1, reduce the progress coefficient or increase the efficiency penalty to encourage smoother approaches. Also track vertical_speed_magnitude; if it exceeds 1.5, consider a velocity penalty."
+}

@@ -1,0 +1,22 @@
+{
+  "diagnosis": "Agent optimizes for fast descent (progress reward) over landing quality, resulting in high-speed one-leg touchdowns (10% falls, 41% both_legs_down) because speed penalty is negligible (-0.066) and there is no penalty for angular instability",
+  "root_cause_category": "underconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_speed",
+      "current_code": "r_speed = -speed * 0.05  # Penalize high velocity to encourage throttle modulation",
+      "new_code": "r_speed = -speed * 0.3  # Penalize high velocity to encourage controlled descent",
+      "reason": "Current speed penalty (-0.066 at speed 1.32) is 18x smaller than progress reward (~1.228), providing insufficient counter-pressure. Increasing to 0.3 makes speed penalty (-0.396) comparable to other components, incentivizing the agent to slow down for stable landings."
+    },
+    {
+      "component": "r_angle",
+      "current_code": "No angle penalty exists in the reward function",
+      "new_code": "r_angle = -abs(state[4]) * 0.5 - abs(state[5]) * 0.3  # Penalize tilt and angular velocity for stable landing posture\ncomponents[\"r_angle\"] = r_angle",
+      "reason": "Agent lands at arbitrary angles (mean angle 0.047 rad, angular velocity 0.088) without penalty. Adding angle penalty creates incentive to maintain upright posture during descent, increasing both_legs_down rate and reducing falls at touchdown."
+    }
+  ],
+  "predicted_effect": "Agent will descend more slowly and maintain upright posture, increasing both_legs_down rate from ~41% to ~70% and reducing fall rate from 10% to <5%, while maintaining 90%+ completion rate",
+  "max_risk": "If penalties are too strong, agent may hover indefinitely to avoid speed/angle penalties, reducing completion rate and increasing episode length",
+  "risk_mitigation": "Monitor mean_length and completion_rate: if mean_length exceeds 600 or completion drops below 80%, reduce r_speed coefficient from 0.3 to 0.2 and r_angle coefficients from 0.5/0.3 to 0.3/0.2"
+}

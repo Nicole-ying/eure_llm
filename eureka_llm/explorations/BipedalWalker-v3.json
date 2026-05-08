@@ -1,0 +1,256 @@
+{
+  "env_id": "BipedalWalker-v3",
+  "spaces": {
+    "observation": {
+      "shape": [
+        24
+      ],
+      "low": -5.0,
+      "high": 5.0
+    },
+    "action": {
+      "type": "Box",
+      "shape": [
+        4
+      ],
+      "n": null
+    }
+  },
+  "obs_dim": 24,
+  "episode_length_stats": {
+    "mean": 740.53,
+    "std": 751.81,
+    "min": 48,
+    "max": 1600
+  },
+  "termination_summary": {
+    "max_steps": {
+      "count": 13,
+      "fraction": 0.433
+    },
+    "terminated": {
+      "count": 17,
+      "fraction": 0.567
+    }
+  },
+  "info_keys": {},
+  "obs_dim_stats": [
+    {
+      "dim": 0,
+      "space_low": -3.141593,
+      "space_high": 3.141593,
+      "mean": 0.218196,
+      "std": 0.250463,
+      "sample_min": -1.481322,
+      "sample_max": 3.05411
+    },
+    {
+      "dim": 1,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": 0.000236,
+      "std": 0.033635,
+      "sample_min": -0.200337,
+      "sample_max": 0.182767
+    },
+    {
+      "dim": 2,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": 0.009808,
+      "std": 0.052119,
+      "sample_min": -0.202894,
+      "sample_max": 0.428786
+    },
+    {
+      "dim": 3,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": -0.007578,
+      "std": 0.039249,
+      "sample_min": -0.339711,
+      "sample_max": 0.105268
+    },
+    {
+      "dim": 4,
+      "space_low": -3.141593,
+      "space_high": 3.141593,
+      "mean": 0.454758,
+      "std": 0.848177,
+      "sample_min": -0.891375,
+      "sample_max": 1.209312
+    },
+    {
+      "dim": 5,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": 0.002169,
+      "std": 0.473332,
+      "sample_min": -1.697203,
+      "sample_max": 1.707901
+    },
+    {
+      "dim": 6,
+      "space_low": -3.141593,
+      "space_high": 3.141593,
+      "mean": 0.41958,
+      "std": 0.569191,
+      "sample_min": -0.776519,
+      "sample_max": 1.776776
+    },
+    {
+      "dim": 7,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": 0.029898,
+      "std": 0.752881,
+      "sample_min": -2.981093,
+      "sample_max": 2.578386
+    },
+    {
+      "dim": 8,
+      "space_low": -0.0,
+      "space_high": 5.0,
+      "mean": 0.552324,
+      "std": 0.497255,
+      "sample_min": 0.0,
+      "sample_max": 1.0
+    },
+    {
+      "dim": 9,
+      "space_low": -3.141593,
+      "space_high": 3.141593,
+      "mean": -0.194259,
+      "std": 0.843828,
+      "sample_min": -0.902616,
+      "sample_max": 1.201591
+    },
+    {
+      "dim": 10,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": 0.007476,
+      "std": 0.43446,
+      "sample_min": -1.935422,
+      "sample_max": 1.924914
+    },
+    {
+      "dim": 11,
+      "space_low": -3.141593,
+      "space_high": 3.141593,
+      "mean": 0.013449,
+      "std": 0.567787,
+      "sample_min": -0.794679,
+      "sample_max": 1.761323
+    },
+    {
+      "dim": 12,
+      "space_low": -5.0,
+      "space_high": 5.0,
+      "mean": -0.013878,
+      "std": 0.751715,
+      "sample_min": -2.069152,
+      "sample_max": 3.087928
+    },
+    {
+      "dim": 13,
+      "space_low": -0.0,
+      "space_high": 5.0,
+      "mean": 0.56028,
+      "std": 0.496353,
+      "sample_min": 0.0,
+      "sample_max": 1.0
+    },
+    {
+      "dim": 14,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.260735,
+      "std": 0.046706,
+      "sample_min": 0.075091,
+      "sample_max": 0.481596
+    },
+    {
+      "dim": 15,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.263696,
+      "std": 0.047236,
+      "sample_min": 0.075944,
+      "sample_max": 0.487065
+    },
+    {
+      "dim": 16,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.272926,
+      "std": 0.048889,
+      "sample_min": 0.078601,
+      "sample_max": 0.504112
+    },
+    {
+      "dim": 17,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.289571,
+      "std": 0.051867,
+      "sample_min": 0.083393,
+      "sample_max": 0.534841
+    },
+    {
+      "dim": 18,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.315953,
+      "std": 0.056581,
+      "sample_min": 0.090982,
+      "sample_max": 0.583516
+    },
+    {
+      "dim": 19,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.356477,
+      "std": 0.063805,
+      "sample_min": 0.102627,
+      "sample_max": 0.658198
+    },
+    {
+      "dim": 20,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.419756,
+      "std": 0.075075,
+      "sample_min": 0.120801,
+      "sample_max": 0.774756
+    },
+    {
+      "dim": 21,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.524554,
+      "std": 0.093775,
+      "sample_min": 0.150915,
+      "sample_max": 0.967894
+    },
+    {
+      "dim": 22,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.709862,
+      "std": 0.089416,
+      "sample_min": 0.207228,
+      "sample_max": 1.0
+    },
+    {
+      "dim": 23,
+      "space_low": -1.0,
+      "space_high": 1.0,
+      "mean": 0.999573,
+      "std": 0.01049,
+      "sample_min": 0.34287,
+      "sample_max": 1.0
+    }
+  ],
+  "max_episode_steps": 1600
+}

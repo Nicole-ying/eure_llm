@@ -1,0 +1,16 @@
+# Reward Design Memory
+
+This file stores cross-round causal lessons learned during reward function iteration.
+Each entry is a concise lesson: "what changed → what happened → why".
+This file is truncated at 200 lines to fit in context.
+
+**Round 1**: We changed the reward structure by reducing r_termination or adding a progress bonus. This caused no behavioral change because the termination penalty still overwhelmed all other signals — the agent simply minimized episode length by hovering and truncating early. The reason was that the penalty was still 20× larger than any other component, making state distinctions invisible. Next time, we must first neutralize the dominant reward component by either removing the constant termination penalty entirely or rescaling it to be comparable in magnitude to the other rewards.
+
+**Round 2**: We reduced the constant termination penalty from −15 to −1 per step. This caused the agent to learn to approach the pad and land in half of episodes, because the previously dominant signal no longer drowned out other reward components. The reason was that shaping factors (r_progress, r_contact) could now influence the policy. Next time, convert r_progress from a negative penalty (−0.37) into a positive reward for reducing distance and vertical speed, and increase the reward for successful landings to push beyond the 50% plateau.
+
+**Round 3**: We made r_progress a positive reward and added a landing bonus. This initially boosted completion rate to 60%, but the constant per‑step termination penalty (−1) created a conflicting incentive: the agent learned to prolong hovering near the pad to collect progress reward while avoiding the additional time penalty that completing the landing would require. Next time, either remove the per‑step termination penalty entirely (set it to zero) or convert it into a small positive reward for surviving, so that the agent is not punished for taking the time needed to land precisely.
+
+**Round 4**: We changed r_termination from a constant −1 penalty to a small positive reward (~0.05 per step). This initially boosted completion rate to 60% but caused the agent to regress to a hovering strategy because the progress reward still dominated and the landing bonus (part of termination reward) was too low to make finishing reliably more attractive than collecting progress over long episodes. Next time, increase the landing bonus to at least +10 and consider annealing the progress reward as the agent gets close to the pad, so that finishing becomes the highest‑value action.
+
+**Round 5**: We changed `r_termination` to a small positive constant (~0.05 per step) rather than zero, and kept the existing progress and shaping rewards. This caused the agent to learn to land frequently (90% completion) but at the cost of precision and fuel efficiency. The reason was that the small per‑step reward still encouraged long episodes, while the progress and shaping rewards guided the agent toward the pad but not to a precise touchdown, and the landing bonus (if any) was not conditioned on distance from the pad center. Next time, set `r_termination` to exactly zero, add a large landing bonus that is **distance‑dependent** (e.g., +10 − 10×pad_distance) to reward precise landings, and optionally introduce a small fuel‑usage penalty to improve efficiency.
+

@@ -1,0 +1,265 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes (changed_count ≤ 3)
+2. **Current Reward Function** — the code that needs to be modified
+3. **Task Manifest** — environment description with step() source
+4. **Perception Report** — recent training behavior summary
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- Access env physics via env.unwrapped
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use descriptive task-agnostic names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`, not random suffixes.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: Set `_outcome` AFTER computing `total = sum(components.values())`, so it does NOT affect the reward
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+Output the complete code in a single ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function.
+Source: round0
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    components = {}
+    
+    # Extract state components with descriptive names
+    pos_x = state[0]      # horizontal position, normalized [-1, 1]
+    pos_y = state[1]      # vertical position relative to helipad
+    vel_x = state[2]      # horizontal velocity
+    vel_y = state[3]      # vertical velocity
+    angle = state[4]      # angular position
+    ang_vel = state[5]    # angular velocity
+    leg_left = state[6]   # left leg ground contact (0 or 1)
+    leg_right = state[7]  # right leg ground contact (0 or 1)
+    
+    # Primary reward: proximity to landing pad (vertical closeness)
+    # pos_y=0 means at pad level, pos_y>0 means above pad
+    # Scale so max reward is ~0.1 per step when at pad
+    r_proximity = -abs(pos_y) * 0.2  # penalty for being far from pad
+    
+    # Bonus for having both legs on ground (success signal)
+    # This is the actual task goal
+    both_legs = leg_left * leg_right  # 1.0 only when both legs contact
+    r_landing = both_legs * 1.0  # small bonus per step when landed
+    
+    # Alive bonus - small reward each step to counter gravity penalty
+    # The agent must act to stay alive, so give a tiny positive reward
+    r_alive = 0.01  # small positive reward for surviving each step
+    
+    components["r_proximity"] = r_proximity
+    components["r_landing"] = r_landing
+    components["r_alive"] = r_alive
+    
+    total = sum(components.values())
+    
+    # Terminal outcome signal (for evaluation only)
+    if terminated:
+        # Success: both legs on ground, roughly upright, low velocity
+        is_upright = abs(angle) < 0.5  # roughly vertical
+        is_gentle = abs(vel_y) < 0.5   # low vertical speed
+        is_centered = abs(pos_x) < 0.3  # on the pad
+        
+        if both_legs and is_upright and is_gentle and is_centered:
+            components["_outcome"] = 10.0  # successful landing bonus
+        else:
+            components["_outcome"] = -1.0  # crash/failure penalty
+        
+        # Subtract outcome from total so it doesn't affect gradient
+        total = total - components["_outcome"]
+    
+    return total, components
+
+
+def metrics_fn(self, env, action) -> dict:
+    """
+    Task-level metrics independent of the reward function.
+    """
+    # Access state from env after step
+    state = env.lander_state if hasattr(env, 'lander_state') else None
+    
+    # Get the observation from the environment
+    # In LunarLander, we can read the lander's physics state directly
+    if hasattr(env, 'lander') and env.lander is not None:
+        pos = env.lander.position
+        vel = env.lander.linearVelocity
+        angle = env.lander.angle
+        ang_vel = env.lander.angularVelocity
+        
+        # Distance to helipad (center of screen, bottom)
+        helipad_x = 0  # center
+        helipad_y = env.helipad_y if hasattr(env, 'helipad_y') else 0
+        
+        distance_to_pad = math.sqrt(
+            (pos.x - helipad_x)**2 + 
+            (pos.y - helipad_y)**2
+        )
+        
+        # Speed magnitude
+        speed = math.sqrt(vel.x**2 + vel.y**2)
+        
+        # Angular deviation from upright
+        angle_error = abs(angle)
+        
+        # Ground contact status
+        left_contact = 1.0 if (hasattr(env, 'legs') and 
+                               env.legs[0].ground_contact) else 0.0
+        right_contact = 1.0 if (hasattr(env, 'legs') and 
+                                env.legs[1].ground_contact) else 0.0
+        
+        return {
+            "distance_to_pad": distance_to_pad,
+            "speed": speed,
+            "angle_error": angle_error,
+            "both_legs_contact": left_contact * right_contact,
+            "is_alive": 1.0 if env.lander.awake else 0.0,
+        }
+    else:
+        return {
+            "distance_to_pad": 0.0,
+            "speed": 0.0,
+            "angle_error": 0.0,
+            "both_legs_contact": 0.0,
+            "is_alive": 1.0,
+        }
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The reward function provides no directional guidance — the constant alive bonus (0.01) and weak proximity penalty (-abs(pos_y)*0.2) give the agent no incentive to move toward the pad, stabilize orientation, or reduce speed, causing it to fall immediately with no improvement.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_proximity → r_shaped",
+      "current_code": "r_proximity = -abs(pos_y) * 0.2  # penalty for being far from pad",
+      "new_code": "r_shaped = -0.1 * abs(pos_x) - 0.1 * abs(pos_y) - 0.05 * abs(angle) - 0.01 * (vel_x**2 + vel_y**2)  # shaped reward for position, orientation, and speed",
+      "reason": "The old proximity only penalized vertical distance, giving no gradient for horizontal movement, orientation, or speed control. The new shaped reward provides a clear gradient toward: centered (x=0), at pad level (y=0), upright (angle=0), and slow (low velocity) — all necessary for a successful landing."
+    },
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.01  # small positive reward for surviving each step",
+      "new_code": "r_alive = 0.02 * (1.0 - abs(angle) / math.pi)  # alive bonus proportional to how upright the agent is (max 0.02 when upright, 0 when inverted)",
+      "reason": "The constant alive bonus (0.01) gave no incentive to stay upright — the agent received the same reward whether stable or tumbling. The new conditional bonus rewards the agent for maintaining an upright orientation, directly addressing the high angle_error (1.20 radians) and encouraging stability."
+    }
+  ],
+  "predicted_effect": "The agent will learn to: (1) move toward the center of the pad (reducing distance_to_pad from 12.86), (2) maintain an upright orientation (reducing angle_error from 1.20), (3) reduce speed when approaching the pad, and (4) eventually achieve successful landings. The shaped reward creates a smooth gradient that guides the agent through the task, rather than a sparse signal that only penalizes failure.",
+  "max_risk": "The new shaped reward coefficients might be too large relative to the alive bonus, causing the agent to focus entirely on position/velocity minimization without learning to land gently. Alternatively, if coefficients are too small, the gradient may be too weak to overcome the alive bonus, resulting in no improvement.",
+  "risk_mitigation": "Monitor the mean values of each reward component after 100K steps. If r_shaped dominates (>90% of total reward magnitude), reduce coefficients by 50%. If the agent still falls immediately, increase the alive bonus coefficient or add a small bonus for leg ground contact during flight. The metrics_fn will track distance_to_pad, speed, and angle_error to detect stagnation."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    assert self.lander is not None
+
+    # Update wind and apply to the lander
+    assert self.lander is not None, "You forgot to call reset()"
+    if self.enable_wind and not (
+            self.legs[0].ground_contact or self.legs[1].ground_contact
+    ):
+        wind_mag = (
+                math.tanh(
+                    math.sin(0.02 * self.wind_idx)
+                    + (math.sin(math.pi * 0.01 * self.wind_idx))
+                )
+                * self.wind_power
+        )
+        self.wind_idx += 1
+        self.lander.ApplyForceToCenter(
+            (wind_mag, 0.0),
+            True,
+        )
+
+        torque_mag = math.tanh(
+            math.sin(0.02 * self.torque_idx)
+            + (math.sin(math.pi * 0.01 * self.torque_idx))
+        ) * (self.turbulence_power)
+        self.torque_idx += 1
+        self.lander.ApplyTorque(
+            (torque_mag),
+            True,
+        )
+
+    if self.continuous:
+        action = np.clip(action, -1, +1).astype(np.float32)
+    else:
+        assert self.action_space.contains(
+            action
+        ), f"{action!r} ({type(action)}) invalid "
+
+    # Apply Engine Impulses
+
+    # Tip is a the (X and Y) components of the rotation of the lander.
+    tip = (math.sin(self.lander.angle), math.cos(self.lander.angle))
+
+    # Side is the (-Y and X) components of the rotation of the lander.
+    side = (-tip[1], tip[0])
+
+    # Generate two random numbers between -1/SCALE and 1/SCALE.
+    dispersion = [self.np_random.uniform(-1.0, +1.0) / SCALE for _ in range(2)]
+
+    m_power = 0.0
+    if (self.continuous and action[0] > 0.0) or (
+            not self.continuous and action == 2
+    ):
+        # Main engine
+        if se
