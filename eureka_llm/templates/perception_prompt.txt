@@ -31,6 +31,9 @@ You do NOT propose changes to the reward function. You do NOT write code. You on
 ### Action-Metrics Cross Analysis
 {action_cross_metrics_section}
 
+### Episode Consistency Diagnostics
+{episode_consistency_section}
+
 ### Trajectory Summary
 - Episodes logged: {n_traj_episodes}
 - Episode length: mean={traj_len_mean}, min={traj_len_min}, max={traj_len_max}
@@ -53,7 +56,7 @@ Produce a structured markdown report with these sections:
 - Which components are active (mean significantly non-zero)?
 - Which components are dominant (|mean| > 2× others)?
 - Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
-- Is any component's mean value suspicious (e.g., exactly 0)?
+- Is any component's mean value suspicious (e.g., persistently near-zero across evaluations)?
 - Check if any component has **high mean but weak alignment** with task progress metrics
 
 ### 4. Behavioral Diagnosis (1-2 sentences)
@@ -69,7 +72,11 @@ Produce a structured markdown report with these sections:
 - Summarize which general principles are currently violated (if any), and rank them by urgency
 - Use relative language (dominant share, trend, ratio, concentration), not absolute fixed judgments
 
-### 7. Key Numbers for Budget Calculation
+### 7. Episode Consistency Summary
+- Compare early vs late behavior signals and state whether policy style is consistent or drifting
+- Explain if drift appears healthy adaptation or unstable policy behavior
+
+### 8. Key Numbers for Budget Calculation
 Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
 - mean_length
 - All task-level metrics listed in the Evaluation Metrics table

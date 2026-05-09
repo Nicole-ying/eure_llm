@@ -1,0 +1,16 @@
+env_id: Humanoid-v4
+total_timesteps: 1000000
+n_envs: 2
+max_episode_steps: 1000
+device: auto
+normalize: true
+phase3:
+  prompt_policy:
+    perception:
+      max_env_metrics_table: 6
+      max_env_metrics_section: 6
+    analyst:
+      max_lines_markdown: 90
+      max_lines_memory: 70
+    generator:
+      max_lines_markdown: 85

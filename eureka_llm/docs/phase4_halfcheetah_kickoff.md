@@ -29,6 +29,18 @@ pip install "gymnasium[mujoco]"
 
 在 HalfCheetah 跑通后，按同一模板扩展到 Ant / Humanoid。
 
+已补充 Phase-4 脚手架文件：
+
+- `configs/ppo_1M_ant.yaml`
+- `configs/ppo_1M_humanoid.yaml`
+- `tools/run_phase4_ant_humanoid.sh`
+- `results/phase4_transfer_summary_template.csv`
+- `envs/Ant-v4/{env.py,step.py}`
+- `envs/Humanoid-v4/{env.py,step.py}`
+
+说明：`run_phase4_ant_humanoid.sh` 会先检查 `envs/Ant-v4` / `envs/Humanoid-v4`
+以及对应 exploration JSON 是否存在；若缺失则打印 skip 提示，不会误触发失败。
+
 ## 这个阶段是否会真的调用 LLM 生成奖励函数？
 
 - `--dry-run`：**不会**调用 LLM，也不会训练；只生成/检查流程产物。

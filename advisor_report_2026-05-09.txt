@@ -261,9 +261,9 @@ Perception → Analyst → Generator → Train → Perception → Reflection
 Phase 1: 数据基础设施扩展（不需要LLM改动）
 
 - [x] 采集action_magnitude作为标准环境指标（已在evaluate.py中实现）
-- [ ] 新增action-metrics交叉分析（action_magnitude × velocity比值、action方差等）
-- [ ] 新增episode内行为一致性指标（前半段vs后半段的策略差异）
-- [ ] 实现通用约束检测算法（无需LLM，纯数据分析）
+- [x] 新增action-metrics交叉分析（action_magnitude × velocity比值、action方差等）
+- [x] 新增episode内行为一致性指标（前半段vs后半段的策略差异）
+- [x] 实现通用约束检测算法（无需LLM，纯数据分析）
 
 Phase 2: 多智能体架构升级
 
@@ -274,10 +274,10 @@ Phase 2: 多智能体架构升级
 
 Phase 3: Prompt Zero-Shot改造
 
-- [ ] 清理所有模板中的环境特定引用
-- [ ] 用原则导向替代问题导向的指令
-- [ ] 所有数值分析使用相对尺度
-- [ ] 模板不自带任何"正确答案"暗示
+- [x] 清理所有模板中的环境特定引用
+- [x] 用原则导向替代问题导向的指令
+- [x] 所有数值分析使用相对尺度
+- [x] 模板不自带任何"正确答案"暗示
 
 Phase 4: 跨环境迁移验证
 

@@ -13,7 +13,11 @@ import math
 import re
 from collections import defaultdict
 from pathlib import Path
-from constraint_discovery import detect_constraint_violations, derive_action_cross_metrics
+from constraint_discovery import (
+    detect_constraint_violations,
+    derive_action_cross_metrics,
+    derive_episode_consistency_metrics,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -697,6 +701,17 @@ def format_action_cross_metrics_section(traj_summary: dict, eval_history: list[d
     metrics = derive_action_cross_metrics(traj_summary, eval_history)
     if not metrics:
         return "*(insufficient metrics to derive action cross-analysis)*"
+    lines = ["| Metric | Value |", "|--------|-------|"]
+    for k in sorted(metrics.keys()):
+        lines.append(f"| {k} | {metrics[k]} |")
+    return "\n".join(lines)
+
+
+def format_episode_consistency_section(traj_summary: dict, eval_history: list[dict]) -> str:
+    """Format Phase-1 temporal/episode consistency diagnostics."""
+    metrics = derive_episode_consistency_metrics(traj_summary, eval_history)
+    if not metrics:
+        return "*(insufficient metrics to derive episode consistency diagnostics)*"
     lines = ["| Metric | Value |", "|--------|-------|"]
     for k in sorted(metrics.keys()):
         lines.append(f"| {k} | {metrics[k]} |")
