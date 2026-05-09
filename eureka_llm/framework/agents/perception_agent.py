@@ -44,6 +44,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         format_tdrq_section,
         format_constraint_discovery_section,
         format_action_cross_metrics_section,
+        format_episode_consistency_section,
     )
 
     data = load_training_data(run_dir)
@@ -71,6 +72,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         "tdrq_section": format_tdrq_section(data["traj_summary"], run_dir),
         "constraint_discovery_section": format_constraint_discovery_section(data["traj_summary"], data["eval_history"]),
         "action_cross_metrics_section": format_action_cross_metrics_section(data["traj_summary"], data["eval_history"]),
+        "episode_consistency_section": format_episode_consistency_section(data["traj_summary"], data["eval_history"]),
         "n_traj_episodes": str(traj.get("n_episodes", 0)),
         "traj_len_mean": str(lens.get("mean", "?")),
         "traj_len_min": str(lens.get("min", "?")),

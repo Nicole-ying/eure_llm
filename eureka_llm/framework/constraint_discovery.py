@@ -123,6 +123,30 @@ def derive_action_cross_metrics(traj_summary: dict, eval_history: list[dict]) ->
     return out
 
 
+def derive_episode_consistency_metrics(traj_summary: dict, eval_history: list[dict]) -> dict[str, Any]:
+    """Estimate within-episode behavioral consistency using temporal proxies.
+
+    Since per-step full trajectories are not always persisted, this uses two robust proxies:
+    1) early-vs-late metric drift in evaluation history
+    2) action variability concentration from trajectory summary env metrics
+    """
+    envm = traj_summary.get("env_metrics", {}) or {}
+    out: dict[str, Any] = {}
+    drift = _eval_window_drift(eval_history)
+    rel = float(drift.get("max_relative_drift", 0.0) or 0.0)
+    out["early_late_relative_drift"] = round(rel, 6)
+    out["early_late_consistency_score"] = round(max(0.0, 1.0 - min(rel, 1.0)), 6)
+    if drift.get("metric") != "n/a":
+        out["drift_dominant_metric"] = drift.get("metric")
+
+    am = _mean_of(envm, "action_magnitude")
+    am_std = _std_of(envm, "action_magnitude")
+    if isinstance(am, (int, float)) and isinstance(am_std, (int, float)) and abs(am) > 1e-8:
+        cv = abs(float(am_std)) / max(abs(float(am)), 1e-8)
+        out["action_cv"] = round(cv, 6)
+    return out
+
+
 def _eval_window_drift(eval_history: list[dict]) -> dict[str, float | str]:
     if len(eval_history) < 4:
         return {"metric": "n/a", "early": 0.0, "late": 0.0, "max_relative_drift": 0.0}

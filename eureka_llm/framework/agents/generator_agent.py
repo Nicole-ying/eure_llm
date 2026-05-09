@@ -181,6 +181,15 @@ def run_generator_agent(run_dir: Path, proposal: dict,
 
         issues = validate_generated_code(code)
         if not issues:
+            try:
+                memory_system.update_belief("generator", {
+                    "round": run_dir.name,
+                    "status": "success",
+                    "attempt": attempt + 1,
+                    "changed_count": proposal.get("changed_count", 0),
+                })
+            except Exception:
+                pass
             return code, prompt, all_responses
 
         # If validation failed and we have retries left, add issues to prompt
@@ -188,6 +197,15 @@ def run_generator_agent(run_dir: Path, proposal: dict,
             issue_str = "; ".join(issues)
             prompt += f"\n\n[RETRY: Previous code had issues: {issue_str}. Fix ALL issues.]"
 
+    try:
+        memory_system.update_belief("generator", {
+            "round": run_dir.name,
+            "status": "failed",
+            "attempts": max_retries + 1,
+            "changed_count": proposal.get("changed_count", 0),
+        })
+    except Exception:
+        pass
     return None, prompt, all_responses
 
 
