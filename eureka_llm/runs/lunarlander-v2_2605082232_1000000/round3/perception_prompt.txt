@@ -1,0 +1,93 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Training Data
+
+### Evaluation Metrics
+| timesteps | mean_length | angle | angular_velocity | distance_to_pad | horizontal_speed | leg_contact | vertical_speed |
+|---|---|---|---|---|---|---|---|
+| 200000 | 70.0 | -0.295709 | -0.571412 | 0.952586 | 1.620987 | 0.018571 | -6.749495 |
+| 400000 | 435.7 | -0.007121 | -0.019706 | 0.452842 | 0.941474 | 0.036493 | -0.991932 |
+| 600000 | 838.2 | -0.00182 | -0.002955 | 0.407696 | 0.598459 | 0.027559 | -0.537533 |
+| 800000 | 637.0 | 0.011106 | 0.001453 | 0.503443 | 0.528936 | 0.058556 | -0.715651 |
+| 1000000 | 486.1 | 0.01179 | 0.000425 | 0.334839 | 0.47292 | 0.078585 | -0.972708 |
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| _outcome | -0.79819 | 0.602406 | step-level |
+| r_alive | 0.141633 | 0.079318 | step-level |
+| r_distance | -0.084324 | 0.021358 | step-level |
+| r_leg_contact | 0.03815 | 0.144663 | step-level |
+| r_vertical_speed | -0.036686 | 0.01206 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+*(not available — training env_metrics collection requires MetricsTrackingWrapper)*
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| _outcome | -0.7982 | 0.6024 | 72.6% | variable | major |
+| r_alive | 0.1416 | 0.0793 | 12.9% | variable | active |
+| r_distance | -0.0843 | 0.0214 | 7.7% | stable | active |
+| r_leg_contact | 0.0382 | 0.1447 | 3.5% | noisy | active |
+| r_vertical_speed | -0.0367 | 0.0121 | 3.3% | stable | active |
+
+**Summary:** 5/5 components active, 0 dominant (>80%), 1 noisy (CV>1.5).
+
+### Policy Entropy Trend
+*(not collected — entropy tracking added in training dynamics update)*
+
+### TDRQ Index (Training-Dynamics Reward Quality)
+| TDRQ | Score |
+|------|-------|
+| overall | 57.32 / 100 |
+| component_balance | 27.37 |
+| component_activity | 100.00 |
+| exploration_health | 50.00 |
+
+Interpretation: <40 = unhealthy reward dynamics, 40-70 = mixed, >70 = healthy.
+
+### Trajectory Summary
+- Episodes logged: 6402
+- Episode length: mean=155.1, min=50, max=1986
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: mean_length and the most important env-specific metrics at final timestep
+
+### 2. Critical Metrics
+- List the 3 most important env-specific metrics and their trend
+- Flag any metric that is moving in the wrong direction
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., exactly 0)?
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+
+### 5. TDRQ Diagnosis
+- Explain whether low TDRQ is mainly from imbalance, inactivity, or exploration collapse
+- Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
+
+### 6. Key Numbers for Budget Calculation
+Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
+- mean_length
+- All env-specific metrics listed in the Evaluation Metrics table (these are the primary task-performance indicators)
+
+Output ONLY the report. No code. No proposals.

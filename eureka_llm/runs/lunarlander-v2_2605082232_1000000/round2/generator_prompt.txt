@@ -1,0 +1,306 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- Access env state directly via `env.xxx` (the caller already passes unwrapped env)
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 1).
+Source: round1
+"""
+
+import math
+import numpy as np
+
+import math
+import numpy as np
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    """
+    Primary signal: approaching the landing pad (minimizing distance).
+    Shaping: survival bonus that decays with distance, bonus for both legs touching ground.
+    """
+    # state[0] = normalized x (target 0), state[1] = normalized y above pad (target 0)
+    dist_to_pad = math.sqrt(state[0]**2 + state[1]**2)
+
+    # Reward for being close to the pad: scale so maximum ≈ -0.2
+    r_distance = -0.1 * dist_to_pad   # coefficient justified: max distance ~2.1 => -0.21
+
+    # Survival bonus shaped by proximity: far away gives zero, near gives full +0.05
+    # (0.05 * max(0, 1 - distance)) ensures hover at distance > 1 yields no alive reward
+    r_alive = 0.05 * max(0.0, 1.0 - dist_to_pad)   # 0.05 justified: max alive reward when at pad
+
+    # Bonus for both legs in contact (indicates landing attempt)
+    r_leg_contact = 1.0 if (state[6] >= 0.5 and state[7] >= 0.5) else 0.0
+
+    # Compute total BEFORE adding _outcome
+    components = {
+        "r_distance": r_distance,
+        "r_alive": r_alive,
+        "r_leg_contact": r_leg_contact,
+    }
+    total = sum(components.values())
+
+    # Terminal outcome for evaluation only (not added to total)
+    if terminated:
+        # Success: both legs grounded, near pad center, near-zero velocities, upright
+        success = (state[6] >= 0.5 and state[7] >= 0.5 and
+                   abs(state[0]) < 0.2 and abs(state[1]) < 0.1 and
+                   abs(state[2]) < 0.5 and abs(state[3]) < 0.5 and
+                   abs(state[4]) < 0.2)
+        components["_outcome"] = 1.0 if success else -1.0  # not added to total
+    # else: do NOT add _outcome key at all
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics (reward-agnostic) for monitoring agent performance.
+    Accesses env state directly.
+    """
+    lander = env.lander
+    helipad_y = env.helipad_y
+    x_scale = env.VIEWPORT_W / env.SCALE / 2
+    y_scale = env.VIEWPORT_H / env.SCALE / 2
+
+    # Normalized position (same as observation dims 0,1)
+    norm_x = (lander.position.x - x_scale) / x_scale
+    norm_y = (lander.position.y - (helipad_y + env.LEG_DOWN / env.SCALE)) / y_scale
+
+    # Euclidean distance to landing pad (in normalized coordinates)
+    distance_to_pad = math.sqrt(norm_x**2 + norm_y**2)
+
+    # Vertical speed from physics (positive = downward)
+    vertical_speed = lander.linearVelocity.y
+
+    # Angle (radians)
+    angle = lander.angle
+
+    # Angular velocity
+    angular_velocity = lander.angularVelocity
+
+    # Leg contact flags
+    left_contact = 1.0 if env.legs[0].ground_contact else 0.0
+    right_contact = 1.0 if env.legs[1].ground_contact else 0.0
+
+    # Horizontal speed (absolute value)
+    horizontal_speed = abs(lander.linearVelocity.x)
+
+    return {
+        "distance_to_pad": distance_to_pad,
+        "vertical_speed": vertical_speed,
+        "angle": angle,
+        "angular_velocity": angular_velocity,
+        "leg_contact": min(left_contact + right_contact, 1.0),  # 1 if at least one leg contacts
+        "horizontal_speed": horizontal_speed,
+    }
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The agent falls quickly because the alive reward is too weak and distance-dependent, providing no survival incentive when far from the pad, while the large outcome penalty dominates learning.",
+  "root_cause_category": "inactive_component",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.05 * max(0.0, 1.0 - dist_to_pad)   # 0.05 justified: max alive reward when at pad",
+      "new_code": "r_alive = 0.5   # Constant survival bonus to incentivize staying alive regardless of distance",
+      "reason": "The previous alive reward was 0.05*(1-distance) ≈ 0.002 per step at distance 0.96, completely overpowered by the outcome penalty. A constant 0.5 gives a strong positive per-step reward, making the agent want to survive longer and thus learn to control descent."
+    },
+    {
+      "component": "r_vertical_speed (new component)",
+      "current_code": "(not present)",
+      "new_code": "r_vertical_speed = -0.05 * abs(state[3])   # state[3] is vertical speed; penalizes fast falling",
+      "reason": "The agent currently falls with vertical speed ~-7 m/s. Adding a mild penalty (0.05 * 7 = 0.35) prevents hard landings and encourages controlled descent, while keeping net per-step reward positive when combined with the increased alive reward."
+    }
+  ],
+  "predicted_effect": "The agent will survive much longer (mean length should rise significantly, e.g., from ~67 to several hundred steps). It will begin to learn to balance and reduce vertical speed instead of immediately crashing. The distance reward and leg contact bonus will then have time to guide it toward the landing pad.",
+  "max_risk": "The constant alive reward may cause the agent to hover forever at a distance, never attempting to land, because staying alive alone yields a positive reward (0.5 per step). The distance reward (-0.1 per unit) and leg contact bonus (+1.0 for both legs) might not be strong enough to overcome the safe hovering local optimum.",
+  "risk_mitigation": "Monitor mean episode length and distance_to_pad. If after 2M timesteps the agent hovers at distance > 0.5 for most of the episode, we can add a small distance-dependent decay to the alive reward (e.g., 0.5 * (1 - 0.3*dist)) or increase the outcome success reward. The TDRQ score will detect reward hacking (very long episodes with no improvement in distance)."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    assert self.lander is not None
+
+    # Update wind and apply to the lander
+    assert self.lander is not None, "You forgot to call reset()"
+    if self.enable_wind and not (
+            self.legs[0].ground_contact or self.legs[1].ground_contact
+    ):
+        wind_mag = (
+                math.tanh(
+                    math.sin(0.02 * self.wind_idx)
+                    + (math.sin(math.pi * 0.01 * self.wind_idx))
+                )
+                * self.wind_power
+        )
+        self.wind_idx += 1
+        self.lander.ApplyForceToCenter(
+            (wind_mag, 0.0),
+            True,
+        )
+
+        torque_mag = math.tanh(
+            math.sin(0.02 * self.torque_idx)
+            + (math.sin(math.pi * 0.01 * self.torque_idx))
+        ) * (self.turbulence_power)
+        self.torque_idx += 1
+        self.lander.ApplyTorque(
+            (torque_mag),
+            True,
+        )
+
+    if self.continuous:
+        action = np.clip(action, -1, +1).astype(np.float32)
+    else:
+        assert self.action_space.contains(
+            action
+        ), f"{action!r} ({type(action)}) invalid "
+
+    # Apply Engine Impulses
+
+    # Tip is a the (X and Y) components of the rotation of the lander.
+    tip = (math.sin(self.lander.angle), math.cos(self.lander.angle))
+
+    # Side is the (-Y and X) components of the rotation of the lander.
+    side = (-tip[1], tip[0])
+
+    # Generate two random numbers between -1/SCALE and 1/SCALE.
+    dispersion = [self.np_random.uniform(-1.0, +1.0) / SCALE for _ in range(2)]
+
+    m_power = 0.0
+    if (self.continuous and action[0] > 0.0) or (
+            not self.continuous and action == 2
+    ):
+        # Main engine
+        if se
+
+## Perception Report (for context)
+## 1. Behavior Trend Summary
+
+At each evaluation milestone (200k–1M timesteps), the agent consistently produces short episodes: mean episode length hovers around 66–71 steps out of a maximum 1000. The agent is not completing the task; it is falling quickly. Key indicators: vertical speed is large and negative (around -7 m/s), horizontal speed positive (~2 m/s), distance to pad near 1.0 (falling from or near the pad), and leg contact extremely low (~0.02). The agent appears to take a few steps or push forward, then loses balance and falls to the ground, terminating the episode. There is no improvement over time—mean length is flat and vertical speed becomes slightly more negative (worse). At the final timestep (1M): mean_length=67.5, angle=-0.061 rad, distance_to_pad=0.964, vertical_speed=-6.96 m/s, horizontal_speed=1.89 m/s.
+
+## 2. Critical Metrics
+
+| Metric | Trend | Final Value | Direction |
+|--------|-------|-------------|-----------|
+| mean_length | Flat (~66–71) | 67.5 | No improvement |
+| vertical_speed | Slightly more negative (worsening) | -6.96 | ⚠️ Wrong direction |
+| distance_to_pad | Stable (~0.96–1.02) | 0.964 | No improvement |
+
+The most important env-specific metrics are **mean_length** (episode survival), **vertical_speed** (how fast the agent falls), and **distance_to_pad** (proximity to landing/target). Vertical speed is trending in the wrong direction (becoming more negative), indicating the agent is falling faster at later timesteps. Leg contact remains negligibly low throughout.
+
+## 3. Reward Component Health
+
+- **Active components** (mean significantly non‑zero): `_outcome` (-0.48), `r_distance` (-0.095), `r_leg_contact` (+0.016).  
+- **Dominant component**: `_outcome` (|mean| = 0.48) is >5× the next largest (`r_distance`), and constitutes 79.8% of total reward magnitude.  
+- **Inactive/negligible**: `r_alive` (mean = 0.0099) is very small and contributes only 1.6% of total reward; it provides little shaping signal.  
+- No component has a suspicious mean of exactly 0.
+
+## 4. Behavioral Diagnosis
+
+The agent’s current strategy is to briefly move forward (positive horizontal speed) but then immediately fall, leading to early termination. It is stuck in a local optimum where the large negative outcome penalty for falling dominates the reward, flooding the signal from other components. The agent has not learned to maintain balance or stand upright—it repeatedly executes a short, unbalanced push followed by a fall.
+
+## 5. TDRQ Diagnosis
+
+The low TDRQ score (45.32) is primarily driven by **poor component balance** (20.16/100): the `_outcome` penalty is far larger than all other rewards combined, overwhelming learning. Exploration health is moderate (50). This reward function needs to be **iterated** to reduce the dominance of the terminal penalty and introduce intermediate shaping for stable posture, so the agent can discover a viable balancing strategy instead of being punished immediately for falling.
+
+## 6. Key Numbers for Budget Calculation
+
+| Metric | Value |
+|--------|-------|
+| mean_length | 67.5 |
+| angle | -0.060722 rad |
+| angular_velocity | -0.032361 rad/s |
+| distance_to_pad | 0.964078 |
+| horizontal_speed | 1.89257 m/s |
+| leg_contact | 0.019259 |
+| vertical_speed | -6.964485 m/s |
+
+## Environment Constraints
+- **Gravity detected**: Zero-action episodes terminate quickly (>50% die within 20% of episode limit). The agent MUST act to stay alive. Do NOT penalize the main control actions (motors, thrusters, torque) — the agent needs them to counteract gravity. Reward staying alive but not at the cost of task progress.
+- **Balance/angle dims** (obs dims [4], range ≈ \u00b1\u03c0): These are angular coordinates. Use smallest signed angular difference (not raw subtraction) for distance calculations. If the task requires maintaining a specific posture, include an angular stability reward component.
+- **High failure rate under random actions** (100%): The task has strong failure conditions. Termination penalty should be < 100x expected per-step reward to avoid pathological risk-aversion.

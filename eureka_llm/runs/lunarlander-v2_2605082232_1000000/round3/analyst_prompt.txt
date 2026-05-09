@@ -1,0 +1,331 @@
+You are the **Analyst Agent** — the core reasoning engine of a multi-agent reward function design system.
+
+You receive:
+1. **Perception Report** — structured observations about the latest training run
+2. **Current Reward Function** — the code that was just trained
+3. **Task Manifest** — environment description, termination conditions, success criteria
+4. **Cross-Round Memory** — causal lessons from previous iterations
+5. **Recent Round History** — summaries of the last 3 rounds
+
+## Your tools
+
+You have access to these tools. When you want to use one, output:
+
+tool_name: tool_input
+
+### Tool 1: query_memory
+Search cross-round memory for relevant lessons.
+Input: a keyword or question
+Output: matching lessons
+
+### Tool 2: calculate_reward_budget
+Estimate whether the current reward function (or a proposed change) would produce positive net reward for the current agent behavior.
+Input: specific coefficient changes to evaluate
+Output: net reward estimate per step
+
+### Tool 3: compare_rounds
+Compare two specific rounds.
+Input: round numbers X and Y
+Output: summary of differences
+
+## Your workflow
+
+You must use a **Thought → Action → Observation → Thought** loop.
+
+Step by step:
+1. **Thought**: Analyze the perception report. What is the key problem?
+2. **Action**: Use a tool to gather more information
+3. **Observation**: What did the tool return?
+4. **Thought**: Interpret the observation. Form a hypothesis.
+5. **Action or Final Answer**: Either gather more info or output your final proposal
+
+## Output format
+
+After your analysis loop, produce a **structured JSON proposal**:
+
+{
+    "diagnosis": "One-sentence summary of the root cause",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <number of changes, max 3>,
+    "proposed_changes": [
+        {
+            "component": "component_name",
+            "current_code": "current line of code",
+            "new_code": "proposed new line of code",
+            "reason": "Why this change fixes the problem"
+        }
+    ],
+    "predicted_effect": "What behavior change do you expect?",
+    "max_risk": "What could go wrong with this change?",
+    "risk_mitigation": "How would we detect or recover from failure?"
+}
+
+## Constraints
+
+- **changed_count ≤ 3**: You can only change at most 3 distinct coefficients or structural elements per round.
+- **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
+- **Include reward budget**: For each change, explain why the net reward will remain positive.
+- **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
+- **Environment ID is always "UnknownEnv"**: Do not try to identify the environment by name.
+
+
+---
+## Current Context
+
+### Current Round: 4
+### Previous Round Results: run_dir = round3
+
+### Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    assert self.lander is not None
+
+    # Update wind and apply to the lander
+    assert self.lander is not None, "You forgot to call reset()"
+    if self.enable_wind and not (
+            self.legs[0].ground_contact or self.legs[1].ground_contact
+    ):
+        wind_mag = (
+                math.tanh(
+                    math.sin(0.02 * self.wind_idx)
+                    + (math.sin(math.pi * 0.01 * self.wind_idx))
+                )
+                * self.wind_power
+        )
+        self.wind_idx += 1
+        self.lander.ApplyForceToCenter(
+            (wind_mag, 0.0),
+            True,
+        )
+
+        torque_mag = math.tanh(
+            math.sin(0.02 * self.torque
+
+### Perception Report
+# Agent Behavior Report
+
+## 1. Behavior Trend Summary
+
+- **At 200k timesteps:** The agent completes very short episodes (mean length 70). It is highly unstable: large negative angle (-0.296 rad) and angular velocity (-0.571), with high horizontal speed (1.62) and strong downward vertical speed (-6.75). It is essentially tumbling or falling immediately. Leg contact is minimal (0.019), meaning it rarely touches the ground in a controlled stance.
+- **At 400k:** Episodes become much longer (mean 435.7). The agent stabilizes orientation (angle –0.007, angular velocity –0.02), reduces horizontal speed to 0.94, and vertical speed drops to –0.99 (still descending but slowly). Distance to pad is ~0.45. The agent appears to be learning to balance and float or glide toward the pad while controlling its descent.
+- **At 600k:** Peak mean episode length (838.2). Orientation is nearly perfect (angle –0.002, angular velocity –0.003). Horizontal speed further reduces to 0.60, vertical speed to –0.54. Distance to pad is 0.41. Leg contact remains low (0.028). The agent is surviving for long durations, moving slowly toward the pad, but still not making solid ground contact.
+- **At 800k:** Episode length drops to 637.0. Angle becomes slightly positive (0.011) and angular velocity positive (0.001). Horizontal speed decreases to 0.53, vertical speed becomes more negative (–0.72). Distance to pad increases to 0.50. The agent is regressing: it moves away from the pad and descends faster.
+- **At 1M timesteps (final):** Episode length drops further to 486.1. Orientation remains upright (angle 0.012, angular velocity 0.0004). Horizontal speed is lowest at 0.47, distance to pad is 0.33 (closer than before), but vertical speed is –0.97 (faster descent). Leg contact rises to 0.079 (still very low). The agent is surviving moderately long episodes but descending more quickly, suggesting it is falling out of controlled flight or losing altitude.
+
+**Overall trajectory:** Performance improved sharply up to 600k, then declined. The agent is not regressing to random behavior but is settling into a shorter-lived, faster-descending strategy. It is **not making sustained progress** toward the task (likely reaching a pad while maintaining contact). Final key numbers: mean_length = 486.1, distance_to_pad = 0.335, vertical_speed = –0.973, leg_contact = 0.079.
+
+## 2. Critical Metrics
+
+- **mean_length** – peaked at 600k (838.2), then declined to 486.1. **Trend: regressing** (worsening).
+- **distance_to_pad** – fluctuated (0.95 → 0.45 → 0.41 → 0.50 → 0.33). Final value is the lowest (best), but the trend is non-monotonic; last drop may be due to faster descent rather than intentional approach.
+- **vertical_speed** – improved from –6.75 to –0.54 at 600k, then worsened to –0.97 at 1M. **Trend: going in the wrong direction** (more negative = faster descent, likely indicating loss of control or falling).
+
+Other metrics: horizontal_speed decreased steadily (good for stability but may indicate stagnation); leg_contact remains very low (<8%) throughout, never indicating sustained ground contact – a key task requirement is likely missed.
+
+## 3. Reward Component Health
+
+- **Active components (mean significantly non-zero):** All five components have non-zero means.
+  - `_outcome` (mean –0.798, 72.6% of total) – major active component, negative.
+  - `r_alive` (mean +0.142) – positive, encourages survival.
+  - `r_distance` (mean –0.084) – negative, penalizes something (maybe distance from pad?).
+  - `r_leg_contact` (mean +0.038) – positive but noisy.
+  - `r_vertical_speed` (mean –0.037) – negative, penalizes downward speed.
+- **Dominant components:** None exceed 80% of total. `_outcome` is the largest (72.6%), but not dominant by the strict >80% threshold.
+- **Inactive/negligible:** None. All components are active.
+- **Suspicious values:** No means are exactly zero. The `r_leg_contact` has high noise (std/mean ratio >3), suggesting inconsistent foot contact behavior. The `_outcome` component has large std relative to mean, indicating highly variable terminal rewards (likely frequent failures).
+
+## 4. Behavioral Diagnosis
+
+The agent's current strategy is to maintain an upright orientation while slowly drifting toward the pad, but it is descending at an increasing rate and rarely establishing ground contact. It appears to be **stuck in a local optimum** where it survives for moderately long episodes by floating or falling gently, but never successfully completing the task (likely landing on the pad with proper foot contact). The large negative `_outcome` reward suggests frequent terminations due to failure (e.g., falling below a height threshold or exceeding time limit). The agent is not reward hacking in the usual sense, but it is avoiding stronger penalties (distance, vertical speed) at the cost of missing the primary goal.
+
+## 5. TDRQ Diagnosis
+
+The overall TDRQ of 57.32 is in the mixed range (40–70). The low score is primarily driven by **component imbalance** (27.37/100) – the `_outcome` component dominates in magnitude (72.6%) while `r_vertical_speed` and `r_leg_contact` contribute little. Exploration health is moderate (50.00), likely reflecting the lack of entropy data. The reward is **unbalanced** but not collapsed. This reward should be **iterated** to re-scale components so that the negative outcome penalty does not overwhelm other signals, and to make foot contact and vertical speed more influential. Diversification (population-based search) could also help escape the local optimum.
+
+## 6. Key Numbers for Budget Calculation
+
+| Metric | Final Value (at 1M timesteps) |
+|--------|-------------------------------|
+| mean_length | 486.1 |
+| angle | 0.01179 rad (≈0.68°) |
+| angular_velocity | 0.000425 rad/s |
+| distance_to_pad | 0.3348 (units depend on env) |
+| horizontal_speed | 0.4729 units/s |
+| leg_contact | 0.0786 (fraction of steps in contact) |
+| vertical_speed | -0.9727 units/s |
+
+These numbers reflect the agent’s state at the last evaluation point and should be used for reward budget recalibration.
+
+### Current Reward Function
+```python
+"""LLM-generated reward function (round 3).
+Source: round3
+"""
+
+import math
+import numpy as np
+
+import math
+import numpy as np
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    """
+    Primary signal: approaching the landing pad (minimizing distance).
+    Shaping: distance-dependent survival bonus to encourage approach,
+    plus penalty for fast vertical speed, and leg contact only when near pad.
+    """
+    # state[0] = normalized x (target 0), state[1] = normalized y above pad (target 0)
+    dist_to_pad = math.sqrt(state[0]**2 + state[1]**2)
+
+    # Distance penalty: -0.1 * dist gives max ≈ -0.21 (at dist~2.1)
+    r_distance = -0.1 * dist_to_pad  # coefficient justified: max distance ~2.1 => -0.21
+
+    # Distance-dependent survival bonus: encourages approach while still rewarding staying alive
+    # Coefficient 0.5 is scaled such that at dist=0 -> 0.5, dist=1 -> 0.0, for smooth gradient.
+    # At mean distance 0.31, value ≈0.345, still sufficient to keep agent alive but now also pushes toward pad.
+    r_alive = 0.5 * max(0, 1 - dist_to_pad)  # decays linearly from 0.5 to 0 at distance 1
+
+    # Leg contact only counts when agent is very close to pad (dist < 0.2)
+    # Prevents the agent from crashing from far away just to collect the bonus.
+    r_leg_contact = 1.0 if (state[6] >= 0.5 and state[7] >= 0.5 and dist_to_pad < 0.2) else 0.0
+
+    # Penalty for vertical speed (downward = positive in state[3], so abs)
+    # 0.05 * typical speed (~7) ≈ 0.35, keeps penalty moderate while discouraging fast falling
+    r_vertical_speed = -0.05 * abs(state[3])  # state[3] is vertical speed
+
+    # Compute total BEFORE adding _outcome
+    components = {
+        "r_distance": r_distance,
+        "r_alive": r_alive,
+        "r_leg_contact": r_leg_contact,
+        "r_vertical_speed": r_vertical_speed,
+    }
+    total = sum(components.values())
+
+    # Terminal outcome for evaluation only (not added to total)
+    if terminated:
+        # Success: both legs grounded, near pad center, near-zero velocities, upright
+        success = (state[6] >= 0.5 and state[7] >= 0.5 and
+                   abs(state[0]) < 0.2 and abs(state[1]) < 0.1 and
+                   abs(state[2]) < 0.5 and abs(state[3]) < 0.5 and
+                   abs(state[4]) < 0.2)
+        components["_outcome"] = 1.0 if success else -1.0  # not added to total
+    # else: do NOT add _outcome key at all
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics (reward-agnostic) for monitoring agent performance.
+    Accesses env state directly.
+    """
+    lander = env.lander
+    helipad_y = env.helipad_y
+    x_scale = env.VIEWPORT_W / env.SCALE / 2
+    y_scale = env.VIEWPORT_H / env.SCALE / 2
+
+    # Normalized position (same as observation dims 0,1)
+    norm_x = (lander.position.x - x_scale) / x_scale
+    norm_y = (lander.position.y - (helipad_y + env.LEG_DOWN / env.SCALE)) / y_scale
+
+    # Euclidean distance to landing pad (in normalized coordinates)
+    distance_to_pad = math.sqrt(norm_x**2 + norm_y**2)
+
+    # Vertical speed from physics (positive = downward)
+    vertical_speed = lander.linearVelocity.y
+
+    # Angle (radians)
+    angle = lander.angle
+
+    # Angular velocity
+    angular_velocity = lander.angularVelocity
+
+    # Leg contact flags
+    left_contact = 1.0 if env.legs[0].ground_contact else 0.0
+    right_contact = 1.0 if env.legs[1].ground_contact else 0.0
+
+    # Horizontal speed (absolute value)
+    horizontal_speed = abs(lander.linearVelocity.x)
+
+    return {
+        "distance_to_pad": distance_to_pad,
+        "vertical_speed": vertical_speed,
+        "angle": angle,
+        "angular_velocity": angular_velocity,
+        "leg_contact": min(left_contact + right_contact, 1.0),  # 1 if at least one leg contacts
+        "horizontal_speed": horizontal_speed,
+    }
+
+
+```
+
+### Recent Round History
+### Round 2
+Reward: """LLM-generated reward function (round 2). """ """LLM-generated reward function (round 2). """     """
+Metrics: completion=?, fall=?, mean_len=557.6
+Perception: ## Behavior Trend Summary **Trend**: Initially improved (learning to hover) but then regressed as the agent began crashing into the ground more often. Final behavior: descends too fast, makes ground c
+Lesson: ```markdown ## Round 4 Reflection 
+
+### Round 3
+Reward: """LLM-generated reward function (round 3). """     """     """     # state[0] = normalized x (target 0), state[1] = normalized y above pad (target 0)
+Metrics: completion=?, fall=?, mean_len=486.1
+Perception: # Agent Behavior Report ## 1. Behavior Trend Summary **Overall trajectory:** Performance improved sharply up to 600k, then declined. The agent is not regressing to random behavior but is settling into
+Lesson: ## Round 5 Reflection  ### Expected
+
+### Round 4
+
+### Cross-Round Lessons (MEMORY.md)
+# Reward Design Memory
+
+Cross-round causal lessons from reward function iteration. Each line is a single
+compressed lesson: what changed → what happened → why → recommendation.
+Truncated at 200 lines to fit in context.
+
+**Round 1**: `r_alive made distance-dependent → agent ignored it (mean 0.01) and fell faster (vertical speed -7) | Why: outcome penalty (-0.48) still 50× alive reward; distance-dependent alive near zero when far → no incentive to approach pad | Fix: increase alive magnitude by 10× or reduce outcome weight, and add vertical speed penalty to prevent hard landings.`
+
+**Round 2**: `constant alive (0.5) + vertical speed penalty → initial perfect landing then regression to falling (leg_contact 0.385, length 557) | Why: leg_contact reward (+0.217) exploited; constant alive removes landing pressure → agent learns to crash for leg reward | Fix: make alive reward distance-dependent (e.g., 0.5 * max(0, 1 - dist)) and penalize leg contact unless distance < 0.2`
+
+**Round 3**: `distance-dependent alive + conditional leg contact → initial improvement then regression (length 838→486, vertical speed -0.54→-0.97) | Why: termination penalty (72.6% of reward) still dominates; policy overfits to short-term survival then collapses | Fix: reduce _outcome magnitude (e.g., -0.5 instead of -1.0) and proportionally scale alive/distance to maintain gradient`
+
+
+---
+## Begin Your Analysis
+
+Use the Thought → Action → Observation loop.
+
+**Thought:** What is happening? What is the key problem?
+**Action:** query_memory | calculate_reward_budget | compare_rounds
+**Observation:** Tool output
+
+When you have enough information, output your FINAL ANSWER as a JSON proposal:
+
+```json
+{
+    "diagnosis": "...",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <1-3>,
+    "proposed_changes": [...],
+    "predicted_effect": "...",
+    "max_risk": "...",
+    "risk_mitigation": "..."
+}
+```
+
+CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
+metrics_fn MUST be present in the generated code.

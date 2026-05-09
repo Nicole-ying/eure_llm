@@ -47,6 +47,7 @@ def _infer_official_env(env_id: str) -> str:
     # Known mappings
     mapping = {
         "LunarLander-v2": "LunarLander-v2",
+        "LunarLanderContinuous-v2": "LunarLander-v2",
         "BipedalWalker-v3": "BipedalWalker-v3",
         "CartPole-v1": "CartPole-v1",
         "MountainCarContinuous-v0": "MountainCarContinuous-v0",
@@ -117,8 +118,31 @@ def evaluate_round(round_dir: Path, official_env_id: str,
             elif info.get("_episode_truncated", False):
                 truncated += 1
             else:
-                # terminated without _outcome — ambiguous
-                truncated += 1
+                # Natural termination (not truncated), no _outcome
+                # Use env-specific reward heuristics for success/crash
+                _env_lower = official_env_id.lower()
+                if "lunarlander" in _env_lower:
+                    if cur_reward > 100:
+                        completed += 1
+                    elif cur_reward < -50:
+                        fell += 1
+                    else:
+                        truncated += 1
+                elif "bipedal" in _env_lower:
+                    if cur_reward > 100:
+                        completed += 1
+                    elif cur_reward < -50:
+                        fell += 1
+                    else:
+                        truncated += 1
+                else:
+                    # Generic: high positive → success, negative → crash
+                    if cur_reward > 50:
+                        completed += 1
+                    elif cur_reward < -50:
+                        fell += 1
+                    else:
+                        truncated += 1
 
             cur_reward = 0.0
             cur_length = 0

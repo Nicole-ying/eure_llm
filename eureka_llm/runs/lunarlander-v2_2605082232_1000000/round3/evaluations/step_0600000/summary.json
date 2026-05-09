@@ -1,0 +1,31 @@
+{
+  "episodes": 10,
+  "mean_length": 838.2,
+  "env_metrics": {
+    "distance_to_pad": {
+      "mean": 0.407696,
+      "std": 0.296618
+    },
+    "vertical_speed": {
+      "mean": -0.537533,
+      "std": 1.196429
+    },
+    "angle": {
+      "mean": -0.00182,
+      "std": 0.148089
+    },
+    "angular_velocity": {
+      "mean": -0.002955,
+      "std": 0.308135
+    },
+    "leg_contact": {
+      "mean": 0.027559,
+      "std": 0.163706
+    },
+    "horizontal_speed": {
+      "mean": 0.598459,
+      "std": 0.732239
+    }
+  },
+  "timesteps": 600000
+}

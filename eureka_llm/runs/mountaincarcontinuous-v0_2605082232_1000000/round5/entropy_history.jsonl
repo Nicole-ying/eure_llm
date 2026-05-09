@@ -1,0 +1,5 @@
+{"timestep": 200000, "entropy": 1.211966}
+{"timestep": 400000, "entropy": 1.119545}
+{"timestep": 600000, "entropy": 0.964803}
+{"timestep": 800000, "entropy": 0.79101}
+{"timestep": 1000000, "entropy": 0.647206}

@@ -241,7 +241,11 @@ def build_round0_prompt(env_dir: Path, template_path: Path, exploration_path: Pa
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_eval_history(run_dir: Path) -> list[dict]:
-    """Load evaluation history CSV. Returns list of {timesteps, completion_rate, ...}."""
+    """Load evaluation history CSV. Returns list of {timesteps, mean_length, env_metrics, ...}.
+
+    Handles both the legacy format (with completion_rate/fall_rate/truncation_rate columns)
+    and the current format (timesteps + mean_length + env_metrics only).
+    """
     csv_path = run_dir / "evaluations" / "history.csv"
     if not csv_path.exists():
         return []
@@ -249,17 +253,16 @@ def load_eval_history(run_dir: Path) -> list[dict]:
     with csv_path.open("r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            row["timesteps"] = int(row["timesteps"])
-            row["completion_rate"] = float(row["completion_rate"]) if row.get("completion_rate") else 0.0
-            row["fall_rate"] = float(row["fall_rate"]) if row.get("fall_rate") else 0.0
-            row["truncation_rate"] = float(row["truncation_rate"]) if row.get("truncation_rate") else 0.0
-            row["mean_length"] = float(row["mean_length"]) if row.get("mean_length") else 0.0
+            entry = {}
+            entry["timesteps"] = int(row["timesteps"])
+            entry["mean_length"] = float(row.get("mean_length", 0)) if row.get("mean_length") else 0.0
+            # Legacy compat: silently drop completion/fall/truncation fields
             raw = row.get("env_metrics", "{}")
             try:
-                row["env_metrics"] = json.loads(raw)
+                entry["env_metrics"] = json.loads(raw)
             except json.JSONDecodeError:
-                row["env_metrics"] = {}
-            rows.append(row)
+                entry["env_metrics"] = {}
+            rows.append(entry)
     return rows
 
 
@@ -353,16 +356,28 @@ def load_training_data(run_dir: Path) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def format_metrics_table(eval_history: list[dict]) -> str:
-    """Format eval history as markdown table rows."""
+    """Format eval history as markdown table rows (timesteps + mean_length only)."""
+    if not eval_history:
+        return "| — | — |"
     rows = []
+    headers = ["timesteps", "mean_length"]
+    seen = set()
+    # Collect any env_metric keys that appear consistently
     for row in eval_history:
-        rows.append(
-            f"| {row['timesteps']} | {row.get('completion_rate', 0):.3f} "
-            f"| {row.get('fall_rate', 0):.3f} "
-            f"| {row.get('truncation_rate', 0):.3f} "
-            f"| {row.get('mean_length', 0):.1f} |"
-        )
-    return "\n".join(rows) if rows else "| — | — | — | — | — |"
+        for k in row.get("env_metrics", {}):
+            seen.add(k)
+    if seen:
+        headers.extend(sorted(seen))
+
+    rows.append("| " + " | ".join(headers) + " |")
+    rows.append("|" + "|".join("---" for _ in headers) + "|")
+    for row in eval_history:
+        vals = [str(row['timesteps']), f"{row.get('mean_length', 0):.1f}"]
+        for k in sorted(seen):
+            m = row.get("env_metrics", {}).get(k, {})
+            vals.append(f"{m.get('mean', '—')}")
+        rows.append("| " + " | ".join(vals) + " |")
+    return "\n".join(rows)
 
 
 def format_env_metrics_section(eval_history: list[dict]) -> str:
@@ -588,8 +603,12 @@ def compute_tdrq_index(traj_summary: dict, run_dir: Path = None) -> dict:
             final = float(entropy_hist[-1].get("entropy", 0.0))
             if initial > 1e-8:
                 ratio = final / initial
-                # Keep entropy from collapsing (<~0.35) or exploding (>~1.4)
-                if 0.35 <= ratio <= 1.4:
+                # Absolute floor: if final entropy is near-zero, exploration collapsed
+                # (fixes false "healthy" when both initial and final are tiny,
+                #  e.g. init=0.01, final=0.008 → ratio=0.8 but no real exploration)
+                if final < 0.1:
+                    exploration = 0.1
+                elif 0.35 <= ratio <= 1.4:
                     exploration = 1.0
                 elif 0.2 <= ratio <= 1.8:
                     exploration = 0.6

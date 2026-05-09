@@ -32,7 +32,8 @@ into correct, runnable Python code. You apply precise, targeted changes."""
 
 
 def build_generator_prompt(run_dir: Path, proposal: dict,
-                            memory_system) -> str:
+                            memory_system,
+                            constraints: str = "") -> str:
     """Build prompt for the generator agent."""
     template_path = Path(__file__).resolve().parent.parent.parent / "templates" / "generator_prompt.txt"
     template = template_path.read_text("utf-8") if template_path.exists() else _fallback_generator_prompt()
@@ -74,6 +75,16 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
         sections.append("")
         sections.append("## Task Manifest (excerpt)")
         sections.append(task_manifest)
+
+    if perception:
+        sections.append("")
+        sections.append("## Perception Report (for context)")
+        sections.append(perception)
+
+    if constraints:
+        sections.append("")
+        sections.append("## Environment Constraints")
+        sections.append(constraints)
 
     return "\n".join(sections)
 
@@ -131,7 +142,8 @@ def run_generator_agent(run_dir: Path, proposal: dict,
                          memory_system, api_key: str,
                          model: str = "deepseek-reasoner",
                          temperature: float = 0.3,
-                         max_retries: int = 2) -> tuple[Optional[str], str, list]:
+                         max_retries: int = 2,
+                         constraints: str = "") -> tuple[Optional[str], str, list]:
     """Run the generator agent to produce validated reward function code.
 
     Args:
@@ -142,11 +154,12 @@ def run_generator_agent(run_dir: Path, proposal: dict,
         model: Model name
         temperature: Lower temperature for code generation
         max_retries: How many times to retry if validation fails
+        constraints: Environment-specific reward constraints (from exploration)
 
     Returns:
         Validated code string, or None if all retries failed
     """
-    prompt = build_generator_prompt(run_dir, proposal, memory_system)
+    prompt = build_generator_prompt(run_dir, proposal, memory_system, constraints)
     print(f"  Generator prompt: {len(prompt)} chars")
     all_responses = []
 

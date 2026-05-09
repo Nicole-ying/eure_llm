@@ -1,0 +1,16 @@
+{
+  "diagnosis": "Agent is stuck hovering at constant distance because the constant alive reward provides a safe positive base regardless of progress, while the distance penalty is too weak to overcome risk aversion from the sparse outcome reward.",
+  "root_cause_category": "overconstrained",
+  "changed_count": 1,
+  "proposed_changes": [
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.05",
+      "new_code": "r_alive = 0.05 * max(0.0, 1.0 - dist_to_pad)",
+      "reason": "Make the survival bonus contingent on proximity to the pad: far away gives zero bonus, near gives full bonus. This removes the free reward for hovering and forces the agent to reduce distance to earn positive reward."
+    }
+  ],
+  "predicted_effect": "Agent will actively move toward the landing pad to increase the alive reward and reduce the distance penalty. Hovering at a distance becomes unprofitable, so the agent should descend and ultimately land.",
+  "max_risk": "Agent may descend too aggressively (high vertical speed) and crash, incurring the -1 outcome penalty. The lack of velocity penalty could lead to hard landings.",
+  "risk_mitigation": "Monitor crash rate (termination frequency) and vertical speed. If crashes increase significantly, add a small penalty for high vertical speed or increase the distance coefficient to encourage gentler descent."
+}

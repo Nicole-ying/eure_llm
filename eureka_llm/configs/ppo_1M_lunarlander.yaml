@@ -1,4 +1,4 @@
-# PPO config for LunarLander-v2 (RL Zoo tuned)
+# PPO config for LunarLander-v2 discrete
 env_id: "LunarLander-v2-round0"
 
 total_timesteps: 1000000
@@ -28,7 +28,7 @@ ppo:
   learning_rate: 0.0003
   n_steps: 1024
   batch_size: 64
-  n_epochs: 16
+  n_epochs: 4
   gamma: 0.999
   gae_lambda: 0.98
   clip_range: 0.2

@@ -1,0 +1,34 @@
+env_id: MountainCarContinuous-v0-round0
+total_timesteps: 1000000
+seed: 42
+device: cpu
+n_envs: 4
+normalize: true
+max_episode_steps: 999
+evaluation:
+  freq: 200000
+  episodes: 10
+  deterministic: true
+checkpoint:
+  freq: 200000
+gif_steps:
+- 200000
+- 600000
+- 1000000
+gif_fps: 30
+gif_max_steps: 1200
+ppo:
+  policy: MlpPolicy
+  learning_rate: 7.77e-05
+  n_steps: 8
+  batch_size: 256
+  n_epochs: 10
+  gamma: 0.9999
+  gae_lambda: 0.9
+  clip_range: 0.1
+  ent_coef: 0.00429
+  vf_coef: 0.19
+  max_grad_norm: 5
+  use_sde: true
+  sde_sample_freq: 4
+  policy_kwargs: dict(log_std_init=-3.29, ortho_init=False)

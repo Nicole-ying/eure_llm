@@ -20,7 +20,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 
 def evaluate(run_dir: Path, episodes: int = 100) -> dict:
-    """Run behavior evaluation on a trained model."""
+    """Run behavior evaluation on a trained model.
+
+    Only reports mean_length and env_metrics from metrics_fn.
+    Metrics_fn must have been injected when training was done.
+    """
     import re, sys
     cfg_path = run_dir / "config.yaml"
     cfg = yaml.safe_load(cfg_path.read_text("utf-8"))
@@ -40,7 +44,6 @@ def evaluate(run_dir: Path, episodes: int = 100) -> dict:
 
     model = PPO.load(run_dir / "model")
 
-    completed = fell = truncated_count = 0
     lengths = []
     obs = env.reset()
     current_length = 0
@@ -52,25 +55,6 @@ def evaluate(run_dir: Path, episodes: int = 100) -> dict:
 
         if dones[0]:
             lengths.append(current_length)
-            info = infos[0]
-            episode_truncated = info.get("_episode_truncated", False)
-
-            # Read _outcome from reward_components (set by LLM on termination)
-            # +1.0 = success, -1.0 = failure/crash, 0.0 = neutral
-            reward_comps = info.get("reward_components", {})
-            outcome = reward_comps.get("_outcome", None) if isinstance(reward_comps, dict) else None
-
-            if outcome == -1.0:
-                fell += 1
-            elif outcome == 1.0:
-                completed += 1
-            elif outcome == 0.0:
-                truncated_count += 1
-            elif episode_truncated:
-                completed += 1
-            else:
-                truncated_count += 1
-
             current_length = 0
             obs = env.reset()
 
@@ -78,9 +62,6 @@ def evaluate(run_dir: Path, episodes: int = 100) -> dict:
     n = len(lengths)
     return {
         "episodes": n,
-        "completion_rate": round(completed / n, 4),
-        "fall_rate": round(fell / n, 4),
-        "truncation_rate": round(truncated_count / n, 4),
         "mean_length": round(float(np.mean(lengths)), 2),
         "std_length": round(float(np.std(lengths)), 2),
     }

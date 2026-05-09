@@ -1,0 +1,8 @@
+{
+  "env_id": "LunarLander-v2-round0",
+  "total_timesteps": 1000000,
+  "n_envs": 16,
+  "elapsed_seconds": 1855.41,
+  "elapsed_minutes": 30.92,
+  "timestamp": "2026-05-09T00:43:38+08:00"
+}

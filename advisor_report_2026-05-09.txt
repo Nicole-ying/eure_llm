@@ -1,0 +1,310 @@
+基于训练动力学的多智能体奖励函数设计框架 V2：
+从反应式修补到通用物理约束发现
+
+一、当前框架的根本局限：反应式打地鼠
+
+我们在advisor_report_2026-04-30.txt中论证了框架的核心创新——使用内部训练动力学信号替代官方奖励函数作为迭代标准。实验证明了这一方向的可行性：BipedalWalker从-104改善到+273，LunarLander和MountainCar均达到100%成功率。
+
+但MountainCar实验暴露了一个更深层的问题：**框架能检测"能不能到终点"，但检测不了"到终点的姿势好不好看"**。
+
+所有6轮MountainCar实验的分析师提案都陷入了同一模式：
+
+```
+R1: 发现r_success在超时时也触发 → 加距离惩罚
+R2: agent原地不动能拿正奖励 → 增大距离惩罚
+R3: agent慢慢挪到不了终点 → 加速度奖励
+R4: r_success仍然虚假发放 → 继续调系数
+R5: r_success还是虚假发放 → 继续调系数
+```
+
+**没有一轮提出了"action_magnitude始终>0.97可能是个问题"**。而这就是核心矛盾：官方奖励用-0.1*action²惩罚大动作，baseline用温和动作慢慢爬（182步，97.48分），LLM设计的reward让agent满油门猛冲（68步，93.38分）。两者都到了终点，但后者"姿势难看"。
+
+这个问题的根因不在LLM的能力，而在**框架的设计哲学**。
+
+二、核心哲学转变：从"修复问题"到"发现约束"
+
+当前框架的工作方式是：
+
+```
+观察数据 → 找"什么指标不对" → 修复那个指标
+```
+
+这本质上是反应式（reactive）的。每一轮都在问："这一轮出了什么问题？"然后针对性地打补丁。
+
+我们需要转变到：
+
+```
+观察数据 → 找"什么物理/动力学原则被违反了" → 应用那个原则作为约束
+```
+
+这是主动式（proactive）的。每一轮都在问："从这一轮的数据中，我们能发现agent的行为违反了哪些通用的动力学合理性原则？"
+
+**原则 vs 指标的区别：**
+
+| 指标（当前） | 原则（目标） |
+|------------|------------|
+| "r_success占58%，太高了" | "如果某个奖励分量可以在不完成任务的情况下被收集，它就会被利用——奖励必须与任务目标严格对齐" |
+| "mean_length=68，太短了" | "过短的episode length配合最大动作幅度，通常意味着agent用暴力代替策略" |
+| "velocity太低" | "高动作幅度 × 低速度输出 = 能量效率极低，agent在做无用功" |
+| "距离下降不够快" | "如果agent能在安全区持续获得正奖励，它就不会冒险去完成任务" |
+
+**原则是可以跨环境迁移的。** 例如，"可被安全收集的正奖励会被利用"这一原则同时适用于：
+- MountainCar：r_success在接近终点时发放但不需要真正到达
+- BipedalWalker：站立不动也能拿到height奖励
+- 任何稀疏/稠密混合的奖励结构
+
+三、通用动力学约束体系
+
+从实验数据中，我们可以归纳出以下可跨环境发现的通用约束类别。每一类都可以从训练动力学信号中**自动检测**，不需要环境特定的知识。
+
+3.1 动作效率约束 (Action Efficiency)
+
+检测信号：
+- action_magnitude 持续 > 0.9 （动作幅度接近上限）
+- velocity / action_magnitude 比值极低（低效驱动）
+- 动作方差低（单调输出，没有精细控制）
+
+模板化诊断：
+```
+"Agent在{env}中使用{action_magnitude:.1%}的最大动作幅度，但只产生了{velocity}的速度。
+这意味着{energy_waste_description}。建议添加动作惩罚项或效率奖励。"
+```
+
+适用环境：MountainCar（满油门冲刺）、BipedalWalker（高扭矩跪行）、LunarLander（过度喷火）
+
+3.2 奖励-目标对齐约束 (Reward-Goal Alignment)
+
+检测信号：
+- 某个奖励分量的高均值与评估指标的低值共存（如r_success均值4.2但success=0%）
+- 分量方差为零（固定偏移，不提供学习信号）
+
+模板化诊断：
+```
+"分量{component_name}的均值为{mean}但对应的评估指标{eval_metric}为{value}。
+这意味着该分量可以在{explanation}的情况下被收集，建议将其改为稀疏的、仅在实际达成目标时发放。"
+```
+
+适用环境：所有环境（这是最普遍的reward hacking模式）
+
+3.3 探索-利用平衡约束 (Exploration-Exploitation Balance)
+
+检测信号：
+- 策略熵崩溃（final entropy < 0.1）
+- 策略熵持续上升（策略不稳定）
+- 动作分布集中在边界值
+
+模板化诊断：
+```
+"策略熵在训练中呈现{trend}趋势（{initial} → {final}），表明策略{violation_description}。
+建议调整ent_coef或检查是否存在确定性局部最优点。"
+```
+
+3.4 状态空间覆盖约束 (State Coverage)
+
+检测信号：
+- 轨迹长度集中在极窄范围（如MountainCar的67-70步区间）
+- 某些观测维度从未被访问到特定范围
+- 不同episode之间的行为高度重复
+
+模板化诊断：
+```
+"所有episode的长度集中在{min}-{max}步的{range_description}范围内，
+且{observations_stuck_description}，表明agent的behavior policy被锁定在一个狭窄的局部最优。
+建议引入探索奖励或增加随机性。"
+```
+
+3.5 时间一致性约束 (Temporal Consistency)
+
+检测信号：
+- 同一个episode内，前半段和后半段的行为模式显著不同
+- 奖励分量在episode内的标准差过大
+- 动作序列的自相关性异常
+
+模板化诊断：
+```
+"在单个episode内，agent的行为{inconsistency_description}，
+这表明{timing_issue_description}。建议检查termination条件或调整时间相关的奖励分量。"
+```
+
+3.6 终止条件利用约束 (Termination Exploitation)
+
+检测信号：
+- 平均episode长度远小于最大步数 × 50%（agent主动终结episode）
+- truncated比例远高于expected（agent利用超时机制规避惩罚）
+
+模板化诊断：
+```
+"平均episode长度({mean_len})仅为最大步数的{ratio:.0%}，
+且{termination_pattern}，表明agent在利用终止条件{explanation}。"
+```
+
+四、真正的多智能体架构
+
+当前框架的"多智能体"实际上是一个**固定顺序的角色专业化流水线**：
+
+```
+Perception → Analyst → Generator → Train → Perception → Reflection
+```
+
+这不是学术意义上的multi-agent system。真正的多智能体系统需要满足：
+
+4.1 独立信念状态 (Independent Belief States)
+
+每个agent应该有自己持久的、跨轮次的信念，而不是每轮在prompt里重新注入所有上下文。
+
+设计：
+- Perception Agent维护一个"动态画像"（dynamics profile），记录agent行为的长期趋势（不仅仅是当前轮的快照）
+- Analyst Agent维护一个"因果模型"（causal model），记录它对reward-行为之间因果关系的假设
+- Generator Agent维护一个"代码空间地图"（code space map），记录哪些改动有效、哪些无效
+
+4.2 异步协商 (Asynchronous Deliberation)
+
+当前是顺序执行：Perception输出后Analyst才能开始。真正的多智能体应该允许：
+
+- Perception Agent输出初步报告后，Analyst Agent可以要求Perception Agent补充分析特定维度
+- Generator Agent在翻译Analyst提案时，如果发现歧义或矛盾，可以要求Analyst澄清
+- Reflection Agent的结论可以被所有agent在下一轮引用和质疑
+
+4.3 多样化的优化视角 (Diverse Optimization Perspectives)
+
+每个agent应该有自己独特的"好reward"的定义：
+
+- Perception Agent：好的reward产生多样化的、物理上合理的行为
+- Analyst Agent：好的reward在分量之间保持健康的平衡和相关性
+- Generator Agent：好的reward是简洁的、数值稳定的、不包含冗余分量
+- Reflection Agent：好的reward的效果是可预测的（预测vs实际的差异小）
+- **New** Critic Agent：好的reward不会鼓励物理上不自然的行为
+- **New** Constraints Agent：好的reward满足所有已发现的通用约束
+
+4.4 动态角色分配
+
+不同轮次可能需要不同的智能体组合。例如：
+- 早期轮次（探索阶段）：Perception + Analyst + Generator就够了
+- 中期轮次（精化阶段）：Critic + Constraints Agent加入，检查是否有违反物理约束
+- 后期轮次（收敛阶段）：Reflection主导，决定是否进入种群分裂或终止
+
+五、Zero-Shot Prompt 原则与模板自查
+
+5.1 Zero-Shot 的核心原则
+
+所有agent prompt必须满足：
+
+1. **不包含任何环境名称或ID引用** — 环境必须是"UnknownEnv"
+2. **不包含任何特定实验结果的示例** — 不能写"例如在MountainCar中..."
+3. **指令应该描述"如何处理数据"，而不是"数据中有什么"** — 不能写"检查r_success是否虚假发放"，应该写"检查是否有奖励分量的均值与对应的评估指标之间存在系统性差异"
+4. **约束来自数据本身的结构，而不是先验知识** — agent应该从数据中推导出"这个任务的目标是什么"，而不是被告知
+5. **数值比较使用相对尺度而非绝对阈值** — 使用"占比"、"倍数"、"趋势"而非固定数字
+
+5.2 现有模板自查
+
+(a) perception_prompt.txt
+
+问题：
+- 第35-36行要求输出"最重要的3个环境指标"但没说"怎么判断重要性"——导致agent只看最显眼的指标（如success），错过隐藏信号（如action_magnitude）
+- 第37-39行要求标记"trend方向错误"但只针对单指标趋势，没有跨指标交叉分析
+- 第45-49行的组件健康检查只关注分量统计，不检查分量之间的因果关系
+
+修正方向：
+- 加入"跨指标模式识别"指令：要求检查指标之间的比值、相关性、一致性
+- 加入"效率分析"维度：action_magnitude/velocity比值、reward_per_step等
+
+(b) analyst_system_prompt.txt
+
+问题：
+- 第17-23行的工具集只有query_memory, calculate_reward_budget, compare_rounds——缺少"分析物理效率"的工具
+- 第46-61行的proposal格式只有"改什么代码"，没有"基于什么通用原则"
+- root_cause_category限定了5个类别（overconstrained, underconstrained, reward_hacking, inactive_component, other），没有"inefficiency"或"misalignment"类别
+
+修正方向：
+- 新增工具：analyze_efficiency()计算action-velocity解耦度，detect_principle_violation()匹配通用约束模板
+- 扩展root_cause_category：加入"inefficiency"、"misalignment"、"exploration_collapse"
+- proposal中加入"violated_principle"字段：记录违反了什么通用动力学原则
+
+(c) generator_prompt.txt
+
+问题：
+- 第5-9条CRITICAL RULES是针对具体编码安全的，正确，不需要改
+- 第10条要求"所有分量缩放应在5倍以内"是好的通用规则
+- 但没有与perception/analyst的约束发现机制链接——Generator应该能接收"这条代码可能违反了物理效率约束"并据此调整
+
+修正方向：
+- 加入"从violated_principles到代码改动的自动映射"（如：如果违反action efficiency约束，自动建议添加action_penalty或smoothness_reward）
+
+(d) reflection_prompt.txt
+
+问题：
+- 因果学习格式只有"what changed → what happened | Why | Fix"，太具体到单次改动
+- 没有要求将具体经验抽象为通用原则
+- 跨轮次记忆存储的是"r_success is spurious"这类表面结论，不是"可收集但不需要完成任务的正奖励会被利用"这类深层原则
+
+修正方向：
+- 要求reflection输出两个层次的学习：**具体结论**（这一轮这个环境的发现）和**抽象原则**（可以跨环境应用的通用约束）
+- 将抽象原则单独存入一个"PRINCIPLES.md"作为共享知识库，agent可以在后续轮次引用
+
+(e) round0_prompt.txt
+
+问题：
+- 第66行明确说"No velocity penalties, angle penalties, smoothness bonuses, or efficiency terms in round 0"——这太保守了，等于预设了这些永远不需要
+- 第72-86行给的示例是"ReachTarget-v0"的简化distance reward——示例本身没问题，但不应该暗示"最简单的一定是最好的"
+- 没有引导LLM考虑物理合理性——只说了"看termination条件理解任务"，没有说"思考这个任务的动力学特性是什么"
+
+修正方向：
+- 将"Round 0保持稀疏"改为"Round 0优先保证信号可学习性"
+- 加入"动力学思考"环节：要求LLM在写reward之前，先描述这个任务的物理本质（重力？平衡？推进？），然后基于这个思考设计奖励
+
+5.3 新增通用约束检测机制
+
+在框架中新增一个独立的**Constraint Discovery Module**，它不依赖LLM调用，而是从训练数据中通过算法化的方式检测上述6类约束的违反情况。这个模块的输出作为结构化约束输入到Analyst和Generator的上下文中。
+
+六、框架重构计划
+
+Phase 1: 数据基础设施扩展（不需要LLM改动）
+
+- [x] 采集action_magnitude作为标准环境指标（已在evaluate.py中实现）
+- [ ] 新增action-metrics交叉分析（action_magnitude × velocity比值、action方差等）
+- [ ] 新增episode内行为一致性指标（前半段vs后半段的策略差异）
+- [ ] 实现通用约束检测算法（无需LLM，纯数据分析）
+
+Phase 2: 多智能体架构升级
+
+- [ ] 从串行流水线改为事件驱动的智能体协调器
+- [ ] 每个智能体维护持久信念状态（而不是每轮从头开始）
+- [ ] 新增Critic Agent（负责挑错）和Constraints Agent（负责约束管理）
+- [ ] 支持智能体之间的双向通信（Analyst可以反问Perception）
+
+Phase 3: Prompt Zero-Shot改造
+
+- [ ] 清理所有模板中的环境特定引用
+- [ ] 用原则导向替代问题导向的指令
+- [ ] 所有数值分析使用相对尺度
+- [ ] 模板不自带任何"正确答案"暗示
+
+Phase 4: 跨环境迁移验证
+
+- [ ] 在新环境（如HalfCheetah、Ant、Humanoid）上验证框架
+- [ ] 验证约束检测机制是否在新环境中也能发现合理的物理约束
+- [ ] 验证抽象原则是否可以跨环境复用
+
+七、预期效果
+
+完成上述改造后，MountainCar的实验应该表现为：
+
+```
+Round 1: Perception发现"action_magnitude=0.97, velocity=0.01 → 效率极低"
+         Analyst识别违反"动作效率约束"
+         Generator添加action_penalty项
+Round 2: 官方奖励从93提升到接近97，步数从68增加到120+
+         不再需要5轮都在修同一个r_success问题
+```
+
+更关键的是，**BipedalWalker上"跪着走"的模式也会被同样的"动作效率约束"捕获**——不需要针对BipedalWalker写任何特定的prompt指令。约束发现是环境无关的，因为它基于的是**任何物理控制任务都成立的基本原则**：合理的动作产生合理的速度变化，不合理的动作产生噪声。
+
+八、与文献的定位
+
+这一升级将我们的工作在三个方面与现有文献区分开来：
+
+1. **Eureka系列**（ICLR 2024）：使用官方奖励作为适应度，而我们完全抛弃官方奖励
+2. **MIRA/PSPO/Intuitor**（2025）：使用训练动力学信号但不具备多智能体协商能力，我们引入真正的多智能体系统
+3. **RF-Agent/LaRes**（NeurIPS 2024/2025）：将奖励设计视为搜索问题，但我们更进一步——我们不搜索奖励函数空间，而是搜索**物理约束空间**。我们问的不是"哪个reward更好"而是"agent违反了哪些物理原则"——答案直接指导reward的修改方向
+
+这是从"找更好的函数"到"理解任务本质"的范式转换。

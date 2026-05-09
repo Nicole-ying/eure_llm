@@ -1,0 +1,91 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Training Data
+
+### Evaluation Metrics
+| timesteps | mean_length | angle | angular_velocity | distance_to_pad | horizontal_speed | leg_contact | vertical_speed |
+|---|---|---|---|---|---|---|---|
+| 200000 | 71.2 | 0.008282 | -0.005463 | 1.019709 | 2.310024 | 0.026685 | -6.475996 |
+| 400000 | 67.6 | 0.040116 | 0.013454 | 0.984571 | 2.598239 | 0.017751 | -6.957395 |
+| 600000 | 66.0 | -0.023699 | -0.004798 | 0.959773 | 2.42964 | 0.016667 | -7.239915 |
+| 800000 | 66.0 | -0.065728 | -0.042347 | 0.958905 | 2.418781 | 0.016667 | -7.234061 |
+| 1000000 | 67.5 | -0.060722 | -0.032361 | 0.964078 | 1.89257 | 0.019259 | -6.964485 |
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| _outcome | -0.480082 | 0.877224 | step-level |
+| r_alive | 0.00986 | 0.002806 | step-level |
+| r_distance | -0.095425 | 0.010558 | step-level |
+| r_leg_contact | 0.015914 | 0.013141 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+*(not available — training env_metrics collection requires MetricsTrackingWrapper)*
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| _outcome | -0.4801 | 0.8772 | 79.8% | noisy | major |
+| r_alive | 0.0099 | 0.0028 | 1.6% | stable | inactive |
+| r_distance | -0.0954 | 0.0106 | 15.9% | stable | active |
+| r_leg_contact | 0.0159 | 0.0131 | 2.6% | variable | active |
+
+**Summary:** 3/4 components active, 0 dominant (>80%), 1 noisy (CV>1.5).
+
+### Policy Entropy Trend
+*(not collected — entropy tracking added in training dynamics update)*
+
+### TDRQ Index (Training-Dynamics Reward Quality)
+| TDRQ | Score |
+|------|-------|
+| overall | 45.32 / 100 |
+| component_balance | 20.16 |
+| component_activity | 75.00 |
+| exploration_health | 50.00 |
+
+Interpretation: <40 = unhealthy reward dynamics, 40-70 = mixed, >70 = healthy.
+
+### Trajectory Summary
+- Episodes logged: 14134
+- Episode length: mean=71.8, min=49, max=1000
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: mean_length and the most important env-specific metrics at final timestep
+
+### 2. Critical Metrics
+- List the 3 most important env-specific metrics and their trend
+- Flag any metric that is moving in the wrong direction
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., exactly 0)?
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+
+### 5. TDRQ Diagnosis
+- Explain whether low TDRQ is mainly from imbalance, inactivity, or exploration collapse
+- Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
+
+### 6. Key Numbers for Budget Calculation
+Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
+- mean_length
+- All env-specific metrics listed in the Evaluation Metrics table (these are the primary task-performance indicators)
+
+Output ONLY the report. No code. No proposals.

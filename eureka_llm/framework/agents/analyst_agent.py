@@ -393,8 +393,9 @@ def _extract_metrics_from_report(report: str, behavior: dict, components: dict):
 
     if section:
         for line in section.group(1).split("\n"):
-            for key in ["fall_rate", "mean_length", "completion_rate"]:
-                if key in line.lower():
-                    nums = re.findall(r"[-+]?\d*\.?\d+", line)
-                    if nums:
-                        behavior[key] = float(nums[0])
+            if "mean_length" in line.lower():
+                nums = re.findall(r"[-+]?\d*\.?\d+", line)
+                if nums:
+                    behavior["mean_length"] = float(nums[0])
+            # Also extract any env-specific metrics (k=v pairs)
+            # These are already handled via env_metadata in the analyst prompt

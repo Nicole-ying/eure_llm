@@ -1,0 +1,22 @@
+{
+  "diagnosis": "Agent optimizes for reduced distance penalty by moving slowly toward goal but never builds the velocity needed to complete the task, stuck in a local optimum where dense position-based rewards dominate over sparse terminal success.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_velocity_bonus (new component)",
+      "current_code": "(not present)",
+      "new_code": "r_velocity_bonus = 5.0 * max(0.0, velocity)  # range [0, ~0.35] per step at max speed\ncomponents[\"r_velocity_bonus\"] = r_velocity_bonus",
+      "reason": "Directly incentivizes building positive velocity (momentum) toward the goal. The agent currently applies near-max force but velocity stays near zero — this reward makes high positive velocity valuable, encouraging the agent to learn the momentum-building action pattern needed to reach the goal with sufficient speed."
+    },
+    {
+      "component": "r_success",
+      "current_code": "r_success = 100.0",
+      "new_code": "r_success = 300.0",
+      "reason": "Increases the terminal incentive to actually complete the task. Currently the agent gets ~1.38 per step from r_success (awarded incorrectly for intermediate progress) plus distance penalty reduction, making it more rewarding to linger than to finish. Tripling the sparse success reward makes goal attainment competitively attractive against the dense shaping."
+    }
+  ],
+  "predicted_effect": "The agent will learn to build momentum (velocity) by applying force consistently rightward or using the correct back-and-forth pattern. The velocity bonus provides immediate feedback for high speed, while the larger success reward makes completing the episode the optimal terminal behavior. Distance should decrease faster and success rate should rise above 0%.",
+  "max_risk": "The velocity bonus could cause the agent to race past the goal without stopping, or oscillate at high speed without directional consistency. If the coefficient is too high, the agent might prioritize speed over actually reaching the goal position, potentially getting stuck in a new local optimum of high-speed oscillation.",
+  "risk_mitigation": "Monitor the velocity metric in evaluation — if it rises above ~0.07 (max_speed) it may indicate instability. Also track distance_to_goal and success together: if velocity is high but distance isn't decreasing, the agent is oscillating rather than progressing. Episode length should remain stable or increase (as episodes last longer due to reaching the goal). If success remains at 0.0 after 500k steps, the velocity coefficient should be reduced."
+}

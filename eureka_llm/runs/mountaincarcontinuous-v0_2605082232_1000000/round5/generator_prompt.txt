@@ -1,0 +1,309 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- Access env state directly via `env.xxx` (the caller already passes unwrapped env)
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 4).
+Source: round4
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 4).
+Source: round4
+Changes:
+- Added r_velocity_bonus component to directly incentivise positive velocity.
+- Increased r_success coefficient from 100.0 to 300.0 to strengthen the terminal signal.
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, position, velocity, action, terminated):
+    """
+    Reward design for a MountainCar-like environment.
+    Goal: reach position >= goal_position with velocity >= goal_velocity.
+
+    Dense shaping: progress reward, distance penalty, and velocity bonus.
+    Sparse terminal bonus: positive reward only when goal is reached.
+    """
+    components = {}
+
+    # -- Progress reward: encourage moving toward the right (high position) --
+    # position in [-1.2, 0.6]; goal at 0.6.
+    # Scale so that moving from left edge to goal gives ~1.8 reward cumulatively.
+    r_progress = position * 0.5  # range [-0.6, 0.3] per step
+    components["r_progress"] = r_progress
+
+    # -- Distance penalty: penalize being far from the goal --
+    # goal_position is 0.6; coefficient 2.0 strongly incentivises approaching goal
+    # (range [-3.6, 0] per step at extreme positions)
+    r_distance_penalty = -2.0 * (self.goal_position - position)  # range [-3.6, 0]
+    components["r_distance_penalty"] = r_distance_penalty
+
+    # -- Velocity bonus: reward building positive momentum --
+    # The agent must accumulate velocity to reach the goal; max_speed is ~0.07,
+    # so the bonus is ~0.35 per step at maximum speed. This provides immediate
+    # feedback for high forward speed, counteracting the current near-zero velocity.
+    r_velocity_bonus = 5.0 * max(0.0, velocity)  # range [0, ~0.35] per step
+    components["r_velocity_bonus"] = r_velocity_bonus
+
+    # -- Terminal success reward (sparse) --
+    # Award only when the car actually reaches the goal (position and velocity thresholds).
+    # Increased from 100.0 to 300.0 to make goal attainment competitively attractive compared
+    # to the dense shaping rewards (which total ~1.5–2.0 per step).
+    r_success = 0.0
+    if terminated and (position >= self.goal_position and velocity >= self.goal_velocity):
+        r_success = 300.0  # strong sparse signal for completing the task
+    components["r_success"] = r_success
+
+    total = sum(components.values())
+
+    # -- Outcome signal for evaluation (excluded from reward) --
+    if terminated:
+        # Environment step() terminates only on goal success, so outcome is always success.
+        components["_outcome"] = 1.0
+    # else no _outcome
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of the reward function.
+    Measures distance to goal, velocity, success, steps taken, and action magnitude.
+    """
+    # Read current state from env (after step)
+    pos = env.state[0]
+    vel = env.state[1]
+
+    # Goal parameters (set in environment)
+    goal_pos = env.goal_position
+    goal_vel = env.goal_velocity
+
+    # Distance to goal (positive means still left)
+    dist = goal_pos - pos
+
+    # Success flag (exactly same condition as termination)
+    success = 1.0 if (pos >= goal_pos and vel >= goal_vel) else 0.0
+
+    # Step counter (initialized as 0 in reset, incremented each step)
+    step_count = getattr(env, '_step_count', 0)
+
+    # Action magnitude
+    action_mag = float(np.abs(action[0]))
+
+    return {
+        "distance_to_goal": dist,
+        "velocity": vel,
+        "success": success,
+        "steps": step_count,
+        "action_magnitude": action_mag
+    }
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "Agent is stuck in a local optimum at ~0.8 distance from goal because the velocity bonus only rewards forward motion (5*max(0,v)), which prevents the oscillatory behavior needed to build momentum, and r_success is spuriously awarded (due to a bug in termination flag), allowing the agent to collect high dense reward without completing the task.",
+  "root_cause_category": "underconstrained",
+  "changed_count": 1,
+  "proposed_changes": [
+    {
+      "component": "r_velocity_bonus",
+      "current_code": "r_velocity_bonus = 5.0 * max(0.0, velocity)  # range [0, ~0.35] per step",
+      "new_code": "r_velocity_bonus = 8.0 * abs(velocity)  # range [0, ~0.56] per step, rewards motion in both directions",
+      "reason": "Rewarding absolute velocity incentivises the agent to move in either direction (backing up to build momentum), which is essential for the MountainCar task. The increased coefficient (8 vs 5) makes motion more attractive relative to the distance penalty, breaking the current stationary local optimum."
+    }
+  ],
+  "predicted_effect": "The agent will begin to oscillate (move left and right) to build kinetic energy, eventually reaching the goal with sufficient velocity. Episode lengths may initially increase as it learns to back up, but success rate should rise above 0.",
+  "max_risk": "The agent might overshoot or oscillate indefinitely without reaching the goal if the distance penalty gradient still dominates. The symmetric bonus could also cause the agent to waste time moving away from the goal (left) too aggressively, slowing convergence.",
+  "risk_mitigation": "Monitor the velocity and distance metrics: if distance does not decrease below 0.5 after 200k steps, revert the change or add a small negative reward for moving away from the goal (e.g., velocity opposite to goal direction). Also, verify that r_success is truly conditional on termination (check _outcome stability)."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action: np.ndarray):
+    position = self.state[0]
+    velocity = self.state[1]
+    force = min(max(action[0], self.min_action), self.max_action)
+
+    velocity += force * self.power - 0.0025 * math.cos(3 * position)
+    if velocity > self.max_speed:
+        velocity = self.max_speed
+    if velocity < -self.max_speed:
+        velocity = -self.max_speed
+    position += velocity
+    if position > self.max_position:
+        position = self.max_position
+    if position < self.min_position:
+        position = self.min_position
+    if position == self.min_position and velocity < 0:
+        velocity = 0
+
+    terminated = bool(
+        position >= self.goal_position and velocity >= self.goal_velocity
+    )
+
+    # ============================================================
+    # LLM generates this function
+    self._pre_step_state = {k: v for k, v in vars(self).items()
+                             if k.startswith('_') and k != '_pre_step_state'}
+    reward, components = self.compute_reward(position, velocity, action, terminated)
+    # metrics_fn can read env._pre_step_state for cross-step values
+    # ============================================================
+
+    self.state = np.array([position, velocity], dtype=np.float32)
+
+    if self.render_mode == "human":
+        self.render()
+
+    return self.state, reward, terminated, False, {
+        "reward_components": components,
+        "_pre_step_state": self._pre_step_state,
+    }
+
+```
+
+
+## Perception Report (for context)
+## Perception Report
+
+### 1. Behavior Trend Summary
+
+- **At 200k:** Agent takes ~70 steps, stays nearly stationary (velocity 0.013), with distance to goal near 1.0 (0.991). No success. Essentially not moving toward goal.
+- **At 400k:** Similar behavior; distance to goal barely decreased (0.954), still stationary.
+- **At 600k:** First meaningful movement — distance drops to 0.768. Episode length remains ~70. Agent begins to approach goal but still far.
+- **At 800k:** Distance further decreases to 0.705; episode length rises to 81.7 (slightly longer episodes). Still no success.
+- **At 1M:** Distance regresses to 0.802, episode length shortens to 67.1. Agent appears to stop improving and may be cycling.
+
+**Overall trajectory:** Modest early improvement (distance 0.99→0.70) then regression. **No episode ever results in success (success=0.0).** Action magnitude stays high (~0.98) — agent applies near-maximum actions but fails to close the remaining gap. The agent is **moving but not completing the task**.
+
+**Key numbers at final timestep (1,000,000):**
+- mean_length = 67.1
+- distance_to_goal = 0.8018
+- success = 0.0
+- velocity = 0.0137
+- action_magnitude = 0.9848
+
+### 2. Critical Metrics
+
+1. **distance_to_goal** – Improved from 0.99 to 0.71–0.77 (middle checkpoints), then regressed to 0.80 at final. Trend: slight improvement then plateau/regression. **Not converging to zero.**
+2. **success** – Flat at 0.0 throughout. **Moving in the wrong direction** (should be >0). Complete task failure.
+3. **velocity** – Stable at very low values (~0.013). Agent is barely moving despite high action magnitude. Suggests actions are not transferring into movement (e.g., opposing forces, high friction, or oscillation).
+
+All three metrics indicate the agent is **not solving the primary task** and is stuck in a behavior that does not reach the goal.
+
+### 3. Reward Component Health
+
+- **Active components (mean significantly non‑zero):** All five components have non‑zero means.
+- **Dominant component:** `r_success` (mean = 4.15, 58.3% of total reward) — its absolute mean is >2× the next component (`r_distance_penalty` at −1.68). This single component dominates the reward signal.
+- **Inactive/negligible:** None. Even `r_velocity_bonus` (0.094) is non‑zero but very small.
+- **Suspicious means:** `_outcome` has mean exactly 1.0 and std 0.0 — likely a constant indicator (e.g., always 1 per step). Not suspicious in itself but indicates no meaningful variation.
+
+**Observation:** The agent receives a large positive `r_success` even though `success` metric is 0.0. This implies `r_success` is a **dense shaping reward** (e.g., based on proximity or progress) rather than actual task success. This creates a local optimum where the agent gets high reward without completing the episode.
+
+### 4. Behavioral Diagnosis
+
+The agent applies near‑maximal actions but moves very sluggishly (low velocity) and only reduces distance to about 0.7–0.8 of the initial offset. It never reaches the goal. The high dense `r_success` reward likely peaks at a moderate distance, causing the agent to **stop improving once it reaches that region**, as additional progress yields diminishing returns. This is a classic case of **stuck in a local optimum** due to an over‑dominant shaping component that does not require full task completion.
+
+### 5. TDRQ Diagnosis
+
+- Overall TDRQ = 73.78 (healthy threshold >70), but component balance is only 41.74 — the **main weakness**.
+- Exploration health is perfect (100), and component activity is full (100). The low balance is entirely due to the dominance of `r_success` (58% of total reward), which skews the gradient.
+- **Recommendation:** The reward should be **iterated** to rebalance components — either reduce the magnitude of the dense success bonus or make it conditional on true task success (sparse). The current reward structure does not incentivize completing the episode; it rewards approximation.
+
+### 6. Key Numbers for Budget Calculation
+
+| Metric               | Final Value (1M) |
+|----------------------|------------------|
+| mean_length          | 67.1             |
+| action_magnitude     | 0.9848           |
+| distance_to_goal     | 0.8018           |
+| steps                | 0.0              |
+| success              | 0.0              |
+| velocity             | 0.0137           |
+
+## Environment Constraints
+- (no specific constraints derived)

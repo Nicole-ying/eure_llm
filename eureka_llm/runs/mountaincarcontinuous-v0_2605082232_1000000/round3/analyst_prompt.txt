@@ -1,0 +1,333 @@
+You are the **Analyst Agent** — the core reasoning engine of a multi-agent reward function design system.
+
+You receive:
+1. **Perception Report** — structured observations about the latest training run
+2. **Current Reward Function** — the code that was just trained
+3. **Task Manifest** — environment description, termination conditions, success criteria
+4. **Cross-Round Memory** — causal lessons from previous iterations
+5. **Recent Round History** — summaries of the last 3 rounds
+
+## Your tools
+
+You have access to these tools. When you want to use one, output:
+
+tool_name: tool_input
+
+### Tool 1: query_memory
+Search cross-round memory for relevant lessons.
+Input: a keyword or question
+Output: matching lessons
+
+### Tool 2: calculate_reward_budget
+Estimate whether the current reward function (or a proposed change) would produce positive net reward for the current agent behavior.
+Input: specific coefficient changes to evaluate
+Output: net reward estimate per step
+
+### Tool 3: compare_rounds
+Compare two specific rounds.
+Input: round numbers X and Y
+Output: summary of differences
+
+## Your workflow
+
+You must use a **Thought → Action → Observation → Thought** loop.
+
+Step by step:
+1. **Thought**: Analyze the perception report. What is the key problem?
+2. **Action**: Use a tool to gather more information
+3. **Observation**: What did the tool return?
+4. **Thought**: Interpret the observation. Form a hypothesis.
+5. **Action or Final Answer**: Either gather more info or output your final proposal
+
+## Output format
+
+After your analysis loop, produce a **structured JSON proposal**:
+
+{
+    "diagnosis": "One-sentence summary of the root cause",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <number of changes, max 3>,
+    "proposed_changes": [
+        {
+            "component": "component_name",
+            "current_code": "current line of code",
+            "new_code": "proposed new line of code",
+            "reason": "Why this change fixes the problem"
+        }
+    ],
+    "predicted_effect": "What behavior change do you expect?",
+    "max_risk": "What could go wrong with this change?",
+    "risk_mitigation": "How would we detect or recover from failure?"
+}
+
+## Constraints
+
+- **changed_count ≤ 3**: You can only change at most 3 distinct coefficients or structural elements per round.
+- **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
+- **Include reward budget**: For each change, explain why the net reward will remain positive.
+- **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
+- **Environment ID is always "UnknownEnv"**: Do not try to identify the environment by name.
+
+
+---
+## Current Context
+
+### Current Round: 4
+### Previous Round Results: run_dir = round3
+
+### Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+Inferred from step() source.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action: np.ndarray):
+    position = self.state[0]
+    velocity = self.state[1]
+    force = min(max(action[0], self.min_action), self.max_action)
+
+    velocity += force * self.power - 0.0025 * math.cos(3 * position)
+    if velocity > self.max_speed:
+        velocity = self.max_speed
+    if velocity < -self.max_speed:
+        velocity = -self.max_speed
+    position += velocity
+    if position > self.max_position:
+        position = self.max_position
+    if position < self.min_position:
+        position = self.min_position
+    if position == self.min_position and velocity < 0:
+        velocity = 0
+
+    terminated = bool(
+        position >= self.goal_position and velocity >= self.
+
+### Perception Report
+# Perception Agent Report
+
+## 1. Behavior Trend Summary
+
+At each evaluation milestone, the agent moves continuously (action magnitude ~0.96–0.98) but with very low velocity (~0.012–0.014). The distance to goal decreases slowly from 0.999 to 0.786 over 1M timesteps, indicating a gradual drift toward the goal. However, the success metric remains exactly 0.0 at all milestones, meaning the agent never completes the task. The steps metric (likely number of steps to goal or required steps) is also always 0.0, suggesting the agent never triggers whatever event counts as “success” or “step completion.” Episode lengths stay in a narrow range (67–76 steps, mean 79), far below the max of 999, implying early termination—possibly due to a time limit, falling out of bounds, or reaching a maximum episode length.
+
+The trajectory is **slowly improving** in terms of distance reduction but **flat** in success rate. The agent is not achieving the primary objective.
+
+**Key numbers at final timestep (1M):**
+- mean_length: 76.1
+- distance_to_goal: 0.786
+- success: 0.0
+- steps: 0.0
+- velocity: 0.012
+
+---
+
+## 2. Critical Metrics
+
+- **distance_to_goal** – decreasing from 0.999 to 0.786 (improving, but still far from 0.0)
+- **success** – constant 0.0 (no improvement, critical failure)
+- **mean_length** – stable around 70, no trend (flat)
+
+**Flagged**: success is moving in the wrong direction (stuck at zero); steps also stuck at zero.
+
+---
+
+## 3. Reward Component Health
+
+| Component | Mean | Std | % of Total | Activity |
+|-----------|------|-----|------------|----------|
+| _outcome | 1.0000 | 0.0000 | 23.3% | active |
+| r_distance_penalty | -1.7096 | 0.2047 | 39.8% | active |
+| r_progress | -0.2024 | 0.0512 | 4.7% | active |
+| r_success | 1.3826 | 0.2382 | 32.2% | active |
+
+- **Active components**: all four have mean significantly non-zero.
+- **Dominant component**: none exceeds 80% of total reward magnitude. However, r_distance_penalty (39.8%) and r_success (32.2%) together dominate (~72%).
+- **Inactive/negligible**: none.
+- **Suspicious values**: _outcome has mean exactly 1.0 with zero std — likely a constant offset (e.g., alive bonus). r_success has a positive mean (1.38) despite a 0% success rate, suggesting it is awarded for intermediate progress (e.g., moving toward goal), not terminal success.
+
+---
+
+## 4. Behavioral Diagnosis
+
+The agent’s strategy is to move slowly toward the goal (distance decreases) but never get close enough to trigger a success event. It appears to be caught in a local optimum where reducing distance gives a small positive reward via r_success (or r_progress) while staying far from the goal minimizes the r_distance_penalty. The agent does not exploit larger actions to cover ground quickly, perhaps because high action magnitude is already present but applied ineffectively (velocity low). No reward hacking is evident; rather, the agent is following the shortest path to reward but failing to reach the terminal condition.
+
+---
+
+## 5. TDRQ Diagnosis
+
+TDRQ overall score is **82.09/100** (healthy), but the component_balance subscore is only **60.19** — indicating moderate imbalance between the distance penalty and success reward, which together dominate the reward signal. Exploration health is perfect (100) and component activity is full (100), so the lower balance is the main drag. This reward structure should be **kept** but would benefit from re-weighting to reduce dominance of r_distance_penalty and r_success, or from adding a shaping that encourages faster progress toward the actual goal.
+
+---
+
+## 6. Key Numbers for Budget Calculation
+
+| Metric | Value |
+|--------|-------|
+| mean_length | 76.1 |
+| action_magnitude | 0.963 |
+| distance_to_goal | 0.786 |
+| steps | 0.0 |
+| success | 0.0 |
+| velocity | 0.012 |
+
+### Current Reward Function
+```python
+"""LLM-generated reward function (round 3).
+Source: round3
+"""
+
+import math
+import numpy as np
+
+import math
+import numpy as np
+
+"""
+LLM-generated reward function (round 2, modified).
+Changes applied:
+- r_distance_penalty coefficient increased from -0.5 to -2.0 (stronger penalty for being far from goal)
+- r_success reduced from 1000.0 to 100.0 (lower reward-to-cost ratio for false triggers)
+"""
+
+def compute_reward(self, position, velocity, action, terminated):
+    """
+    Reward design for a MountainCar-like environment.
+    Goal: reach position >= goal_position with velocity >= goal_velocity.
+
+    Dense shaping: progress reward (rightward motion) + distance penalty (proximity to goal).
+    Sparse terminal bonus: positive reward only when goal is reached.
+    """
+    components = {}
+
+    # -- Progress reward: encourage moving toward the right (high position) --
+    # position is in [-1.2, 0.6]; goal is at 0.6.
+    # Scale so that moving from left edge to goal gives ~1.8 reward cumulatively.
+    r_progress = position * 0.5  # range [-0.6, 0.3] per step
+    components["r_progress"] = r_progress
+
+    # -- Distance penalty: penalize being far from the goal --
+    # goal_position is 0.6; penalty is proportional to how far left we are.
+    # Coefficient 2.0 makes the penalty roughly 4× stronger than before,
+    # strongly incentivizing the agent to approach the goal (range [-3.6, 0] per step).
+    r_distance_penalty = -2.0 * (self.goal_position - position)  # range [-3.6, 0]
+    components["r_distance_penalty"] = r_distance_penalty
+
+    # -- Terminal success reward (sparse) --
+    # Award only when the car actually reaches the goal (position and velocity thresholds).
+    # Reduced to 100.0 to keep the sparse signal meaningful but not overwhelming the dense terms.
+    r_success = 0.0
+    if terminated and (position >= self.goal_position and velocity >= self.goal_velocity):
+        r_success = 100.0  # strong but balanced signal for completing the task
+    components["r_success"] = r_success
+
+    total = sum(components.values())
+
+    # -- Outcome signal for evaluation (excluded from reward) --
+    if terminated:
+        # Environment step() only terminates on goal success, so outcome is always success.
+        components["_outcome"] = 1.0
+    # else no _outcome
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of the reward function.
+    Measures distance to goal, velocity, success, steps taken, and action magnitude.
+    """
+    # Read current state from env (after step)
+    pos = env.state[0]
+    vel = env.state[1]
+
+    # Goal parameters (set in environment)
+    goal_pos = env.goal_position
+    goal_vel = env.goal_velocity
+
+    # Distance to goal (positive means still left)
+    dist = goal_pos - pos
+
+    # Success flag (exactly same condition as termination)
+    success = 1.0 if (pos >= goal_pos and vel >= goal_vel) else 0.0
+
+    # Step counter (initialized as 0 in reset, incremented each step)
+    step_count = getattr(env, '_step_count', 0)
+
+    # Action magnitude
+    action_mag = float(np.abs(action[0]))
+
+    return {
+        "distance_to_goal": dist,
+        "velocity": vel,
+        "success": success,
+        "steps": step_count,
+        "action_magnitude": action_mag
+    }
+
+
+```
+
+### Recent Round History
+### Round 2
+Reward: """LLM-generated reward function (round 2). """ """ """     """
+Metrics: completion=?, fall=?, mean_len=70.7
+Perception: ### 1. Behavior Trend Summary - **distance_to_goal** – stagnant (~1.0 throughout); no downward trend. - **Suspicious behavior:** `r_success` has a large positive mean, yet the evaluation metric `succe
+Lesson: ## Round 2 Reflection  ### Expected
+
+### Round 3
+Reward: """LLM-generated reward function (round 3). """ """ """     """
+Metrics: completion=?, fall=?, mean_len=76.1
+Perception: ## 1. Behavior Trend Summary - **mean_length** – stable around 70, no trend (flat) ## 4. Behavioral Diagnosis
+Lesson: ## Round 3 Reflection  ### Expected
+
+### Round 4
+
+### Cross-Round Lessons (MEMORY.md)
+# Reward Design Memory
+
+Cross-round causal lessons from reward function iteration. Each line is a single
+compressed lesson: what changed → what happened → why → recommendation.
+Truncated at 200 lines to fit in context.
+
+**Round 1**: `r_success` decoupled from goal attainment → agent exploits spurious reward (e.g., movement) and ignores progress | Why: reward function does not condition `r_success` on actual success | Fix: redefine `r_success` to fire only upon reaching goal, and introduce a penalty for increasing distance to goal.
+
+**Round 2**: Conditional r_success + distance penalty → agent stays near start (dithers) | Why: constant per-step reward (+1) dominates; distance penalty too weak to outweigh the positive baseline | Fix: remove constant per-step reward, increase distance penalty coefficient, and add negative reward for zero velocity to force movement
+
+**Round 3**: Increased distance penalty + reduced success reward → slight approach but no success (agent lingers, never triggers r_success) | Why: constant per-step reward (+1) still provides positive baseline; agent optimizes to slowly reduce distance penalty without needing to finish | Fix: remove constant step reward or replace with potential-based shaping that only rewards net distance reduction, and consider extending episode horizon or adding a velocity bonus/cost.
+
+
+---
+## Begin Your Analysis
+
+Use the Thought → Action → Observation loop.
+
+**Thought:** What is happening? What is the key problem?
+**Action:** query_memory | calculate_reward_budget | compare_rounds
+**Observation:** Tool output
+
+When you have enough information, output your FINAL ANSWER as a JSON proposal:
+
+```json
+{
+    "diagnosis": "...",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "changed_count": <1-3>,
+    "proposed_changes": [...],
+    "predicted_effect": "...",
+    "max_risk": "...",
+    "risk_mitigation": "..."
+}
+```
+
+CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
+metrics_fn MUST be present in the generated code.

@@ -35,6 +35,7 @@ if str(_framework_dir) not in sys.path:
 from llm_call import call_llm, extract_reward_fn, save_artifacts
 from template_engine import (
     build_round0_prompt,
+    derive_reward_constraints,
     load_training_data,
 )
 from memory.memory_system import MemorySystem
@@ -293,10 +294,21 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     print("\n  --- Step 3: Generator Agent ---")
     from agents.generator_agent import run_generator_agent, validate_generated_code
 
+    # Derive environment-specific reward constraints from exploration data
+    import json as _json
+    constraints = ""
+    if exploration_path and exploration_path.exists():
+        try:
+            exploration_data = _json.loads(exploration_path.read_text("utf-8"))
+            constraints = derive_reward_constraints(exploration_data)
+        except Exception:
+            pass
+
     if not dry_run:
         gen_result = run_generator_agent(
             prev_round_dir, proposal, memory_system,
             api_key, model, temperature=0.3,
+            constraints=constraints,
         )
         code, gen_prompt, gen_responses = gen_result
         # Save generator artifacts in output dir

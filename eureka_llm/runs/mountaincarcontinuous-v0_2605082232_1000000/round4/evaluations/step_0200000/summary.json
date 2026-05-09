@@ -1,0 +1,27 @@
+{
+  "episodes": 10,
+  "mean_length": 70.0,
+  "env_metrics": {
+    "distance_to_goal": {
+      "mean": 0.991007,
+      "std": 0.393479
+    },
+    "velocity": {
+      "mean": 0.013031,
+      "std": 0.030159
+    },
+    "success": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "steps": {
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "action_magnitude": {
+      "mean": 0.966854,
+      "std": 0.142138
+    }
+  },
+  "timesteps": 200000
+}

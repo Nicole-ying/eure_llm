@@ -1,0 +1,6 @@
+[
+  {
+    "role": "assistant",
+    "content": "**Thought:** The perception report indicates that the agent is terminating early (mean length 81.3) but never reaches the goal (success=0). The reward function gives a large r_success=100 on any termination, and a constant _outcome=1.0 also appears on termination. This looks like classic reward hacking: the agent learns to trigger termination (likely through a timeout) to collect the large terminal bonuses without solving the task. Before proposing changes, I need to confirm that the environment indeed has a timeout termination condition, and check cross-round memory for relevant lessons about this type of failure.\n\n**Action:** query_memory  \n**Input:** \"termination reward hacking timeout r_success\"  \n\n```json\n{\n  \"tool\": \"query_memory\",\n  \"input\": \"termination reward hacking timeout r_success\"\n}\n```"
+  }
+]

@@ -134,8 +134,8 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
     """
     Run behavior-metric evaluation.
 
-    Generic metrics: mean_length, completion_rate, fall_rate, truncation_rate
-    Env-specific metrics: from metrics_fn(env, action) if provided
+    Relies entirely on metrics_fn(env, action) for task-specific indicators.
+    Only generic metric is mean_length (episode length).
     """
     base_env = DummyVecEnv([make_eval_env(env_id, seed=seed)])
     if vecnormalize_path:
@@ -145,7 +145,6 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
     else:
         env = base_env
 
-    completed = fell = truncated_count = 0
     lengths = []
     step_metrics: dict[str, list] = {}
     metrics_errors: list[str] = []
@@ -175,31 +174,9 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
                 print(f"  [eval warning] metrics_fn error: {e}")
                 if len(metrics_errors) < 10:
                     metrics_errors.append(str(e))
-                # metrics_fn is LLM-generated and may have bugs — skip and continue
 
         if dones[0]:
             lengths.append(current_length)
-            info = infos[0]
-            episode_truncated = info.get("_episode_truncated", False)
-
-            # Read _outcome from reward_components (set by LLM on termination)
-            # +1.0 = success, -1.0 = failure/crash, 0.0 = neutral, None = not provided
-            reward_comps = info.get("reward_components", {})
-            outcome = reward_comps.get("_outcome", None) if isinstance(reward_comps, dict) else None
-
-            if outcome == -1.0:
-                fell += 1
-            elif outcome == 1.0:
-                completed += 1
-            elif outcome == 0.0:
-                truncated_count += 1
-            elif episode_truncated:
-                # Survived to time limit — closest generic "success" signal
-                completed += 1
-            else:
-                # terminated=True without _outcome — ambiguous
-                truncated_count += 1
-
             current_length = 0
             obs = env.reset()
 
@@ -207,9 +184,6 @@ def run_behavior_eval(env_id, model, vecnormalize_path, episodes, metrics_fn=Non
     n = len(lengths)
     result = {
         "episodes": n,
-        "completion_rate": round(completed / n, 4),
-        "fall_rate": round(fell / n, 4),
-        "truncation_rate": round(truncated_count / n, 4),
         "mean_length": round(float(np.mean(lengths)), 2),
     }
     if step_metrics:
@@ -285,8 +259,7 @@ class TrainCallback(BaseCallback):
         if not self._history_path.exists():
             with self._history_path.open("w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow([
-                    "timesteps", "completion_rate", "fall_rate", "truncation_rate",
-                    "mean_length", "env_metrics",
+                    "timesteps", "mean_length", "env_metrics",
                 ])
 
     def _save_checkpoint(self, timesteps):
@@ -312,9 +285,6 @@ class TrainCallback(BaseCallback):
         with self._history_path.open("a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([
                 timesteps,
-                metrics.get("completion_rate", ""),
-                metrics.get("fall_rate", ""),
-                metrics.get("truncation_rate", ""),
                 metrics.get("mean_length", ""),
                 json.dumps(metrics.get("env_metrics", {})),
             ])
@@ -336,9 +306,8 @@ class TrainCallback(BaseCallback):
         env_str = " | ".join(
             f"{k}={v['mean']:.3f}" for k, v in metrics.get("env_metrics", {}).items()
         )
-        print(f"  [eval t={timesteps}] completion={metrics.get('completion_rate',0):.0%} "
-              f"fall={metrics.get('fall_rate',0):.0%} "
-              f"len={metrics.get('mean_length',0):.0f}"
+        print(f"  [eval t={timesteps}] "
+              f"len={metrics.get('mean_length', 0):.0f}"
               + (f" | {env_str}" if env_str else ""))
 
     def _on_step(self):

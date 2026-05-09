@@ -6,13 +6,8 @@ You do NOT propose changes to the reward function. You do NOT write code. You on
 
 ## Training Data
 
-### Behavior Metrics
-| timesteps | completion_rate | fall_rate | truncation_rate | mean_length |
-|-----------|----------------|-----------|-----------------|-------------|
+### Evaluation Metrics
 {metrics_table}
-
-### Environment Metrics
-{env_metrics_section}
 
 ### Reward Component Attribution
 | Component | Mean | Std | Type |
@@ -41,7 +36,7 @@ Produce a structured markdown report with these sections:
 ### 1. Behavior Trend Summary
 - At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
 - Is the trajectory improving, regressing, or flat?
-- Key numbers: final completion_rate, fall_rate, mean_length
+- Key numbers: mean_length and the most important env-specific metrics at final timestep
 
 ### 2. Critical Metrics
 - List the 3 most important env-specific metrics and their trend
@@ -62,11 +57,8 @@ Produce a structured markdown report with these sections:
 - Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
 
 ### 6. Key Numbers for Budget Calculation
-Extract numerical metrics from the Environment Metrics and Behavior Metrics
-tables above for use in reward budget analysis:
-- Any env-specific metrics listed in the Environment Metrics section
-- fall_rate (from Behavior Metrics)
-- mean_length (from Behavior Metrics)
-- completion_rate (from Behavior Metrics)
+Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
+- mean_length
+- All env-specific metrics listed in the Evaluation Metrics table (these are the primary task-performance indicators)
 
 Output ONLY the report. No code. No proposals.

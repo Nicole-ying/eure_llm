@@ -70,8 +70,8 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
 def extract_behavior_metrics(perception_report: str) -> dict:
     """Extract key numerical metrics from perception report for budget calculation.
 
-    Only extracts generic metrics (fall_rate, mean_length, completion_rate)
-    that are environment-agnostic. Env-specific metrics come from env_metadata.
+    Only extracts mean_length (environment-agnostic) from perception report.
+    Env-specific metrics come from env_metadata.
     """
     metrics = {}
 
@@ -83,11 +83,10 @@ def extract_behavior_metrics(perception_report: str) -> dict:
     if section_match:
         section = section_match.group(1)
         for line in section.split("\n"):
-            for key in ["fall_rate", "mean_length", "completion_rate"]:
-                if key in line.lower():
-                    nums = re.findall(r"[-+]?\d*\.?\d+", line)
-                    if nums:
-                        metrics[key] = float(nums[0])
+            if "mean_length" in line.lower():
+                nums = re.findall(r"[-+]?\d*\.?\d+", line)
+                if nums:
+                    metrics["mean_length"] = float(nums[0])
     return metrics
 
 
@@ -137,10 +136,9 @@ def _generate_fallback_report(run_dir: Path) -> str:
     last = evals[-1]
     report = (
         f"## Perception Report (Fallback)\n\n"
-        f"### Behavior Summary\n"
-        f"- Completion rate: {last.get('completion_rate', 'N/A')}\n"
-        f"- Fall rate: {last.get('fall_rate', 'N/A')}\n"
-        f"- Mean length: {last.get('mean_length', 'N/A')}\n\n"
+        f"### Evaluation Summary\n"
+        f"- Mean length: {last.get('mean_length', 'N/A')}\n"
+        f"- Env metrics: {last.get('env_metrics', 'N/A')}\n\n"
         f"Note: Full perception analysis requires LLM call with template."
     )
     (run_dir / "perception_report.md").write_text(report, encoding="utf-8")

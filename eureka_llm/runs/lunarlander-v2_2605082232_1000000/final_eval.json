@@ -1,0 +1,80 @@
+{
+  "round0": {
+    "round": "round0",
+    "episodes": 100,
+    "reward_mean": -91.3004,
+    "reward_std": 29.084,
+    "reward_min": -142.3855,
+    "reward_max": -36.5023,
+    "reward_median": -88.631,
+    "completion_rate": 0.0,
+    "fall_rate": 0.93,
+    "truncation_rate": 0.07,
+    "mean_length": 70.45
+  },
+  "round1": {
+    "round": "round1",
+    "episodes": 100,
+    "reward_mean": -98.5718,
+    "reward_std": 15.0698,
+    "reward_min": -133.1328,
+    "reward_max": -64.6178,
+    "reward_median": -97.7847,
+    "completion_rate": 0.0,
+    "fall_rate": 1.0,
+    "truncation_rate": 0.0,
+    "mean_length": 70.23
+  },
+  "round2": {
+    "round": "round2",
+    "episodes": 100,
+    "reward_mean": 235.2631,
+    "reward_std": 39.3727,
+    "reward_min": 95.6987,
+    "reward_max": 288.8195,
+    "reward_median": 244.1286,
+    "completion_rate": 0.99,
+    "fall_rate": 0.0,
+    "truncation_rate": 0.01,
+    "mean_length": 437.84
+  },
+  "round3": {
+    "round": "round3",
+    "episodes": 100,
+    "reward_mean": 172.6099,
+    "reward_std": 72.6177,
+    "reward_min": -43.3018,
+    "reward_max": 262.8884,
+    "reward_median": 202.6782,
+    "completion_rate": 0.85,
+    "fall_rate": 0.0,
+    "truncation_rate": 0.15,
+    "mean_length": 589.66
+  },
+  "round4": {
+    "round": "round4",
+    "episodes": 100,
+    "reward_mean": 199.4761,
+    "reward_std": 75.9985,
+    "reward_min": -43.2587,
+    "reward_max": 272.1519,
+    "reward_median": 224.7207,
+    "completion_rate": 0.89,
+    "fall_rate": 0.0,
+    "truncation_rate": 0.11,
+    "mean_length": 433.24
+  },
+  "round5": {
+    "round": "round5",
+    "episodes": 100,
+    "reward_mean": 247.6605,
+    "reward_std": 76.8566,
+    "reward_min": -218.4248,
+    "reward_max": 303.0976,
+    "reward_median": 265.2773,
+    "completion_rate": 0.97,
+    "fall_rate": 0.02,
+    "truncation_rate": 0.01,
+    "mean_length": 358.36
+  }
+}
