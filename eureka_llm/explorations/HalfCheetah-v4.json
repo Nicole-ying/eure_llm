@@ -1,0 +1,26 @@
+{
+  "env_id": "HalfCheetah-v4",
+  "spaces": {
+    "observation": {"shape": [17], "low": "-inf", "high": "+inf"},
+    "action": {"type": "Box", "shape": [6], "n": null}
+  },
+  "obs_dim": 17,
+  "episode_length_stats": {"mean": 1000.0, "std": 0.0, "min": 1000, "max": 1000},
+  "termination_summary": {"truncated": {"count": 30, "fraction": 1.0}},
+  "info_keys": {},
+  "obs_dim_stats": [
+    {"dim": 0, "space_low": "-inf", "space_high": "+inf", "mean": 0.0, "std": 1.0, "sample_min": -3.0, "sample_max": 3.0}
+  ],
+  "max_episode_steps": 1000,
+  "n_episodes": 30,
+  "zero_action": {
+    "n_episodes": 10,
+    "mean_length": 1000.0,
+    "min_length": 1000,
+    "max_length": 1000,
+    "early_deaths": 0,
+    "death_rate": 0.0,
+    "termination_reasons": {"truncated": 10},
+    "gravity_hypothesis": "none"
+  }
+}

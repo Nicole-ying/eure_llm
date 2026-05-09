@@ -100,6 +100,8 @@ class MemorySystem:
         self.run_dir = Path(run_dir)
         self.memory_dir = self.run_dir / "memory"
         self.memory_dir.mkdir(parents=True, exist_ok=True)
+        self.belief_dir = self.memory_dir / "beliefs"
+        self.belief_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Layer 1: Task Manifest ──
 
@@ -291,3 +293,27 @@ class MemorySystem:
             if estimated_total < 0.05 else None,
             "based_on_behavior": dict(behavior_metrics),
         }
+
+    # ── Phase-2: persistent per-agent belief states ──
+    def belief_path(self, agent_name: str) -> Path:
+        return self.belief_dir / f"{agent_name}.json"
+
+    def get_belief(self, agent_name: str) -> dict:
+        p = self.belief_path(agent_name)
+        if not p.exists():
+            return {"agent": agent_name, "version": 1, "history": []}
+        try:
+            return json.loads(p.read_text("utf-8"))
+        except Exception:
+            return {"agent": agent_name, "version": 1, "history": []}
+
+    def update_belief(self, agent_name: str, entry: dict, max_entries: int = 50) -> dict:
+        belief = self.get_belief(agent_name)
+        belief.setdefault("agent", agent_name)
+        belief.setdefault("version", 1)
+        hist = belief.setdefault("history", [])
+        hist.append(entry)
+        if len(hist) > max_entries:
+            belief["history"] = hist[-max_entries:]
+        self.belief_path(agent_name).write_text(json.dumps(belief, ensure_ascii=False, indent=2), encoding="utf-8")
+        return belief

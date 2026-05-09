@@ -13,8 +13,8 @@ Compare the analyst's predictions with the actual training outcomes:
 2. **Deviation Analysis**: Why did the prediction differ from reality? Be specific.
 3. **Causal Lesson**: Single line, compressed format:
    `[what changed] → [what happened] | Why: [root cause] | Fix: [specific recommendation]`
-   Example: `r_termination=-5 → agent froze (penalty 20× other signals) | Why: termination dominated reward | Fix: reduce to match per-step component magnitudes`
    This exact line is stored verbatim in cross-round memory. Keep it under 200 characters.
+4. **Abstract Principle**: Add one environment-agnostic principle inferred from this round (transferable to UnknownEnv tasks).
 
 ## Output Format
 
@@ -29,6 +29,9 @@ Compare the analyst's predictions with the actual training outcomes:
 
 ### What We Learned
 {Single causal lesson — this will be stored in cross-round memory}
+
+### Abstract Principle
+{One transferable principle statement}
 
 ### For Next Round
 {Specific recommendation for the next analyst}

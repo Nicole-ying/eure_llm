@@ -28,6 +28,21 @@ Compare two specific rounds.
 Input: round numbers X and Y
 Output: summary of differences
 
+### Tool 4: analyze_efficiency
+Analyze action-efficiency coupling from behavior metrics and component stats.
+Input: optional note/question
+Output: efficiency indicators and likely inefficiency pattern
+
+### Tool 5: detect_principle_violation
+Detect possible violations of general reward-design principles from current signals.
+Input: optional note/question
+Output: matched principle violations (alignment, inefficiency, exploration collapse, etc.)
+
+### Tool 6: ask_perception
+Request a targeted follow-up observation from Perception Agent (asynchronous clarification).
+Input: a specific question about metrics/patterns/constraints
+Output: focused perception-side evidence
+
 ## Your workflow
 
 You must use a **Thought → Action → Observation → Thought** loop.
@@ -45,7 +60,8 @@ After your analysis loop, produce a **structured JSON proposal**:
 
 {
     "diagnosis": "One-sentence summary of the root cause",
-    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
     "changed_count": <number of changes, max 3>,
     "proposed_changes": [
         {
@@ -66,4 +82,6 @@ After your analysis loop, produce a **structured JSON proposal**:
 - **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
 - **Include reward budget**: For each change, explain why the net reward will remain positive.
 - **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
-- **Environment ID is always "UnknownEnv"**: Do not try to identify the environment by name.
+- **Environment ID is always "UnknownEnv"**: Do not infer or mention specific benchmark names.
+- **Prefer principle-based diagnosis**: explicitly tie your diagnosis to at least one general principle (e.g., reward-goal alignment, action efficiency, exploration balance, state coverage, temporal consistency, termination exploitation).
+- **Use relative comparisons**: prefer shares, ratios, trends, and before/after deltas over fixed absolute thresholds whenever possible.

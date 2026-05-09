@@ -14,6 +14,7 @@ _framework_dir = Path(__file__).resolve().parent.parent
 if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
 from llm_call import call_llm
+from prompt_guard import validate_zero_shot_output
 
 
 REFLECTION_SYSTEM_PROMPT = """You are a Reflection Agent. You compare predictions with actual outcomes
@@ -90,6 +91,10 @@ def run_reflection_agent(run_dir: Path, round_num: int,
     # Save reflection
     output_path = run_dir / "reflection.md"
     output_path.write_text(response, encoding="utf-8")
+    (run_dir / "reflection_guard.json").write_text(
+        __import__("json").dumps(validate_zero_shot_output(response), ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
     # Extract causal lesson and store in cross-round memory
     lesson = _extract_lesson(response, round_num)

@@ -11,19 +11,18 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
-
 try:
     from openai import OpenAI
 except ImportError:
-    print("ERROR: openai package not installed. Run: pip install openai")
-    sys.exit(1)
+    OpenAI = None
 
 
 def call_llm(prompt: str, api_key: str, model: str = "deepseek-reasoner",
              temperature: float = 0.6, timeout: float = 300.0) -> str:
     """Call DeepSeek API and return response text."""
     import httpx
+    if OpenAI is None:
+        raise RuntimeError("openai package not installed. Run: pip install openai")
     client = OpenAI(
         api_key=api_key,
         base_url="https://api.deepseek.com",
@@ -94,7 +93,11 @@ if __name__ == "__main__":
     api_key = args.api_key or os.environ.get("DEEPSEEK_API_KEY")
     if not api_key and args.config:
         with open(args.config, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+            try:
+                import yaml  # type: ignore
+                cfg = yaml.safe_load(f) or {}
+            except Exception:
+                cfg = {}
         api_key = cfg.get("llm_api_key")
     if not api_key:
         print("ERROR: DEEPSEEK_API_KEY not set (provide via --api-key, --config, or env var)")
