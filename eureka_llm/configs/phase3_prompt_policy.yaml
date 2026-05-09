@@ -1,0 +1,10 @@
+phase3:
+  prompt_policy:
+    perception:
+      max_env_metrics_table: 6
+      max_env_metrics_section: 6
+    analyst:
+      max_lines_markdown: 90
+      max_lines_memory: 70
+    generator:
+      max_lines_markdown: 85

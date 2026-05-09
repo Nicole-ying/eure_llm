@@ -4,32 +4,40 @@ You have NO access to the official reward function — it has been excluded from
 
 ## Environment Data
 
-- Observation dimensions: {obs_dim}
-- Action space: {action_desc}
-- Time limit per episode: {max_ep_steps} steps
+- Observation dimensions: 17
+- Action space: Box([6])
+- Time limit per episode: 1000 steps
 
 ### Step Source Code (reward excluded)
 
 ```python
-{step_source}
+def step(self, action):
+    self._pre_step_state = {k: v for k, v in vars(self).items() if k.startswith("_") and k != "_pre_step_state"}
+    obs, _official_reward, terminated, truncated, info = self.base_env.step(action)
+    reward, components = self.compute_reward(obs, action, terminated, truncated, info)
+    info = dict(info or {})
+    info["reward_components"] = components
+    info["_pre_step_state"] = self._pre_step_state
+    return obs, reward, terminated, truncated, info
 ```
 
 ### Random Rollout Statistics
 
-Random policy ({n_episodes} episodes, each up to {max_ep_steps} steps):
+Random policy (30 episodes, each up to 1000 steps):
 
-**Observation space** ({obs_dim} dimensions — use ranges below to calibrate reward coefficients):
+**Observation space** (17 dimensions — use ranges below to calibrate reward coefficients):
 
 | dim | space bounds | mean ± std | [min, max] | inferred type |
 |-----|-------------|-----------|------------|--------------|
-{obs_rows}
+| 0 | [-inf, +inf] | 0.0 ± 1.0 | [-3.0, 3.0] | continuous |
 
 **Termination breakdown:**
-{term_summary}
+- `truncated`: 30 episodes (100%)
 
 ### Auto-Derived Reward Constraints
 
-{reward_constraints}
+- **No gravity detected**: Zero-action episodes survive to timeout. The agent can remain idle indefinitely. Focus reward on active task progress, not survival.
+- **High-dim action space** (6 continuous dims): Different dimensions likely control different effectors. A uniform energy penalty on ALL dimensions may penalize necessary movements. Prefer penalizing action smoothness (delta from previous step) rather than raw action magnitude.
 
 ---
 # ═══════════════════════════════════════════════════
@@ -78,7 +86,7 @@ Use scaling based on observed rollout ranges (relative scale), then add at most 
 ### Write compute_reward
 
 ```python
-def compute_reward(self, {compute_reward_signature}):
+def compute_reward(self, obs, action, terminated, truncated, info):
     """
     Returns:
         total_reward: float — scalar reward for this step
@@ -122,7 +130,8 @@ Termination outcome (`_outcome`):
 - If the current step is NOT terminal (`terminated=False`), do NOT include `_outcome`
 
 Allowed imports:
-{allowed_imports}
+import math
+import numpy as np
 
 ### Write metrics_fn
 

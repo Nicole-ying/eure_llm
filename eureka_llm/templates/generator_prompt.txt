@@ -13,6 +13,7 @@ Generate a complete, valid Python module with two functions:
 
 ### def compute_reward(self, action) -> tuple[float, dict]
 - Apply the exact changes specified in the Analyst Proposal
+- If `violated_principle` is present, ensure code modifications explicitly address that principle.
 - Keep all unchanged components exactly as they are
 - Every constant must have a comment justifying its magnitude
 - Must return (total_reward, components_dict)
@@ -58,5 +59,6 @@ Generate a complete, valid Python module with two functions:
    - Use only positions, velocities, angles, contacts, and termination flags.
 
 If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+When resolving conflicts, prioritize principle-consistent behavior over ad-hoc coefficient patching.
 
 Output only one complete ```python block.

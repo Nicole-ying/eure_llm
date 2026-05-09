@@ -18,6 +18,8 @@ _framework_dir = Path(__file__).resolve().parent.parent
 if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
 from llm_call import call_llm
+from prompt_guard import validate_zero_shot_output
+from prompt_compaction import load_prompt_policy, write_compaction_stats
 
 
 PERCEPTION_SYSTEM_PROMPT = """You are a Perception Agent — an AI that observes raw training data
@@ -40,21 +42,35 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         format_traj_env_metrics_table,
         format_dynamics_section,
         format_tdrq_section,
+        format_constraint_discovery_section,
+        format_action_cross_metrics_section,
     )
 
     data = load_training_data(run_dir)
     template = template_path.read_text(encoding="utf-8")
+    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "perception")
+    compaction_stats = {}
 
     traj = data["traj_summary"]
     lens = traj.get("lengths", {})
 
     placeholders = {
-        "metrics_table": format_metrics_table(data["eval_history"]),
-        "env_metrics_section": format_env_metrics_section(data["eval_history"]),
+        "metrics_table": format_metrics_table(
+            data["eval_history"],
+            max_metrics=policy.get("max_env_metrics_table", 6),
+            stats=compaction_stats,
+        ),
+        "env_metrics_section": format_env_metrics_section(
+            data["eval_history"],
+            max_metrics=policy.get("max_env_metrics_section", 6),
+            stats=compaction_stats,
+        ),
         "component_table": format_component_table(data["traj_summary"]),
         "traj_env_metrics_table": format_traj_env_metrics_table(data["traj_summary"]),
         "dynamics_section": format_dynamics_section(data["traj_summary"], run_dir),
         "tdrq_section": format_tdrq_section(data["traj_summary"], run_dir),
+        "constraint_discovery_section": format_constraint_discovery_section(data["traj_summary"], data["eval_history"]),
+        "action_cross_metrics_section": format_action_cross_metrics_section(data["traj_summary"], data["eval_history"]),
         "n_traj_episodes": str(traj.get("n_episodes", 0)),
         "traj_len_mean": str(lens.get("mean", "?")),
         "traj_len_min": str(lens.get("min", "?")),
@@ -64,6 +80,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
     result = template
     for key, value in placeholders.items():
         result = result.replace("{" + key + "}", str(value))
+    write_compaction_stats(run_dir / "perception_prompt_compaction.json", compaction_stats)
     return result
 
 
@@ -115,8 +132,54 @@ def run_perception_agent(run_dir: Path, api_key: str,
     (run_dir / "perception_prompt.txt").write_text(prompt, encoding="utf-8")
     (run_dir / "perception_response.md").write_text(report, encoding="utf-8")
     (run_dir / "perception_report.md").write_text(report, encoding="utf-8")
+    (run_dir / "perception_guard.json").write_text(
+        json.dumps(validate_zero_shot_output(report), ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+    # Phase-2: update persistent Perception belief state
+    try:
+        from memory.memory_system import MemorySystem
+        mem = MemorySystem(run_dir.parent if run_dir.name.startswith("round") else run_dir)
+        mem.update_belief("perception", {
+            "round": run_dir.name,
+            "summary": report[:400],
+        })
+    except Exception:
+        pass
 
     return report
+
+
+def answer_perception_query(run_dir: Path, query: str) -> str:
+    """Answer targeted follow-up questions from other agents using structured data only.
+
+    This is the Phase-2 bridge for Analyst ↔ Perception bidirectional communication.
+    """
+    _import_dir = Path(__file__).resolve().parent.parent
+    if str(_import_dir) not in sys.path:
+        sys.path.insert(0, str(_import_dir))
+    from template_engine import load_training_data
+    from constraint_discovery import detect_constraint_violations, derive_action_cross_metrics
+
+    data = load_training_data(run_dir)
+    traj = data.get("traj_summary", {})
+    eval_history = data.get("eval_history", [])
+    violations = detect_constraint_violations(traj, eval_history)
+    cross = derive_action_cross_metrics(traj, eval_history)
+    q = (query or "").lower()
+
+    if any(k in q for k in ["efficiency", "action", "velocity"]):
+        return f"Perception follow-up (efficiency): {cross}"
+    if any(k in q for k in ["constraint", "principle", "violation"]):
+        return f"Perception follow-up (violations): {violations}"
+    if any(k in q for k in ["length", "termination", "truncation"]):
+        return f"Perception follow-up (lengths): {traj.get('lengths', {})}"
+    return (
+        "Perception follow-up summary: "
+        f"n_episodes={traj.get('n_episodes', 0)}, lengths={traj.get('lengths', {})}, "
+        f"cross_metrics={cross}, violations={violations[:3]}"
+    )
 
 
 def _generate_fallback_report(run_dir: Path) -> str:

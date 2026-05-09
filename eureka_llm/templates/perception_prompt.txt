@@ -25,6 +25,12 @@ You do NOT propose changes to the reward function. You do NOT write code. You on
 ### TDRQ Index (Training-Dynamics Reward Quality)
 {tdrq_section}
 
+### Constraint Discovery (Algorithmic, Non-LLM)
+{constraint_discovery_section}
+
+### Action-Metrics Cross Analysis
+{action_cross_metrics_section}
+
 ### Trajectory Summary
 - Episodes logged: {n_traj_episodes}
 - Episode length: mean={traj_len_mean}, min={traj_len_min}, max={traj_len_max}
@@ -34,31 +40,38 @@ You do NOT propose changes to the reward function. You do NOT write code. You on
 Produce a structured markdown report with these sections:
 
 ### 1. Behavior Trend Summary
-- At each evaluation milestone, what is the agent doing? (completing task? falling immediately? surviving but not moving?)
+- At each evaluation milestone, what is the policy doing in state/action space?
 - Is the trajectory improving, regressing, or flat?
-- Key numbers: mean_length and the most important env-specific metrics at final timestep
+- Key numbers: mean_length and the most important task-level metrics at final timestep
 
 ### 2. Critical Metrics
-- List the 3 most important env-specific metrics and their trend
+- List the 3 most important task-level metrics and explain **why** they are important (impact on progress + cross-metric consistency)
 - Flag any metric that is moving in the wrong direction
+- Include at least one **cross-metric pattern** (ratio/correlation/consistency).
 
 ### 3. Reward Component Health
 - Which components are active (mean significantly non-zero)?
 - Which components are dominant (|mean| > 2× others)?
 - Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
 - Is any component's mean value suspicious (e.g., exactly 0)?
+- Check if any component has **high mean but weak alignment** with task progress metrics
 
 ### 4. Behavioral Diagnosis (1-2 sentences)
 - In plain language, what is the agent's current strategy?
 - Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+- Include one sentence on **efficiency** using relative terms (high effort/low gain or low effort/high gain).
 
 ### 5. TDRQ Diagnosis
 - Explain whether low TDRQ is mainly from imbalance, inactivity, or exploration collapse
 - Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
 
-### 6. Key Numbers for Budget Calculation
+### 6. Constraint Violations Summary
+- Summarize which general principles are currently violated (if any), and rank them by urgency
+- Use relative language (dominant share, trend, ratio, concentration), not absolute fixed judgments
+
+### 7. Key Numbers for Budget Calculation
 Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
 - mean_length
-- All env-specific metrics listed in the Evaluation Metrics table (these are the primary task-performance indicators)
+- All task-level metrics listed in the Evaluation Metrics table
 
 Output ONLY the report. No code. No proposals.

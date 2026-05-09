@@ -13,6 +13,7 @@ import math
 import re
 from collections import defaultdict
 from pathlib import Path
+from constraint_discovery import detect_constraint_violations, derive_action_cross_metrics
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -355,7 +356,7 @@ def load_training_data(run_dir: Path) -> dict:
 # Iteration prompt formatters
 # ─────────────────────────────────────────────────────────────────────────────
 
-def format_metrics_table(eval_history: list[dict]) -> str:
+def format_metrics_table(eval_history: list[dict], max_metrics: int = 6, stats: dict | None = None) -> str:
     """Format eval history as markdown table rows (timesteps + mean_length only)."""
     if not eval_history:
         return "| — | — |"
@@ -367,20 +368,39 @@ def format_metrics_table(eval_history: list[dict]) -> str:
         for k in row.get("env_metrics", {}):
             seen.add(k)
     if seen:
-        headers.extend(sorted(seen))
+        # Keep only most informative metrics by variance across eval points (up to 6)
+        metric_scores = []
+        for k in seen:
+            vals = []
+            for row in eval_history:
+                m = row.get("env_metrics", {}).get(k, {})
+                v = m.get("mean")
+                if isinstance(v, (int, float)):
+                    vals.append(float(v))
+            if len(vals) >= 2:
+                mean = sum(vals) / len(vals)
+                var = sum((x - mean) ** 2 for x in vals) / len(vals)
+            else:
+                var = 0.0
+            metric_scores.append((k, var))
+        selected = [k for k, _ in sorted(metric_scores, key=lambda x: x[1], reverse=True)[:max_metrics]]
+        if stats is not None:
+            stats["metrics_table_total_candidates"] = len(metric_scores)
+            stats["metrics_table_selected"] = selected
+        headers.extend(sorted(selected))
 
     rows.append("| " + " | ".join(headers) + " |")
     rows.append("|" + "|".join("---" for _ in headers) + "|")
     for row in eval_history:
         vals = [str(row['timesteps']), f"{row.get('mean_length', 0):.1f}"]
-        for k in sorted(seen):
+        for k in headers[2:]:
             m = row.get("env_metrics", {}).get(k, {})
             vals.append(f"{m.get('mean', '—')}")
         rows.append("| " + " | ".join(vals) + " |")
     return "\n".join(rows)
 
 
-def format_env_metrics_section(eval_history: list[dict]) -> str:
+def format_env_metrics_section(eval_history: list[dict], max_metrics: int = 6, stats: dict | None = None) -> str:
     """Format env-specific metrics from evaluation history as markdown."""
     if not eval_history:
         return "*(none collected)*"
@@ -394,7 +414,26 @@ def format_env_metrics_section(eval_history: list[dict]) -> str:
         return "*(none collected)*"
 
     sections = []
-    for metric in sorted(all_metrics):
+    # limit section length by selecting at most 6 metrics with strongest trend variation
+    scores = []
+    for metric in all_metrics:
+        vals = []
+        for row in eval_history:
+            m = row.get("env_metrics", {}).get(metric, {})
+            v = m.get("mean")
+            if isinstance(v, (int, float)):
+                vals.append(float(v))
+        if len(vals) >= 2:
+            drift = abs(vals[-1] - vals[0]) / max(abs(vals[0]), 1e-6)
+        else:
+            drift = 0.0
+        scores.append((metric, drift))
+
+    selected = [metric for metric, _ in sorted(scores, key=lambda x: x[1], reverse=True)[:max_metrics]]
+    if stats is not None:
+        stats["env_metrics_total_candidates"] = len(scores)
+        stats["env_metrics_selected"] = selected
+    for metric in selected:
         rows = []
         rows.append(f"| timesteps | {metric}_mean | {metric}_std |")
         rows.append("|-----------|-------------|-------------|")
@@ -637,6 +676,30 @@ def format_tdrq_section(traj_summary: dict, run_dir: Path = None) -> str:
         "",
         "Interpretation: <40 = unhealthy reward dynamics, 40-70 = mixed, >70 = healthy.",
     ]
+    return "\n".join(lines)
+
+
+def format_constraint_discovery_section(traj_summary: dict, eval_history: list[dict]) -> str:
+    """Format algorithmic constraint-discovery output."""
+    violations = detect_constraint_violations(traj_summary, eval_history)
+    if not violations:
+        return "*(No strong generic constraint violation detected from current dynamics signals.)*"
+    lines = ["| Principle | Severity | Evidence | Diagnosis |",
+             "|-----------|----------|----------|-----------|"]
+    for v in violations:
+        ev = ", ".join(f"{k}={val}" for k, val in v.get("evidence", {}).items())
+        lines.append(f"| {v['principle']} | {v['severity']} | {ev} | {v['diagnosis']} |")
+    return "\n".join(lines)
+
+
+def format_action_cross_metrics_section(traj_summary: dict, eval_history: list[dict]) -> str:
+    """Format Phase-1 action/behavior cross metrics."""
+    metrics = derive_action_cross_metrics(traj_summary, eval_history)
+    if not metrics:
+        return "*(insufficient metrics to derive action cross-analysis)*"
+    lines = ["| Metric | Value |", "|--------|-------|"]
+    for k in sorted(metrics.keys()):
+        lines.append(f"| {k} | {metrics[k]} |")
     return "\n".join(lines)
 
 

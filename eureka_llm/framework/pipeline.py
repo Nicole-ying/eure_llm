@@ -25,7 +25,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from time import perf_counter
 
-import yaml
+try:
+    import yaml  # type: ignore
+except Exception:
+    yaml = None
 
 # Ensure framework directory is on path for imports
 _framework_dir = Path(__file__).resolve().parent
@@ -42,6 +45,28 @@ from memory.memory_system import MemorySystem
 
 
 BEIJING = timezone(timedelta(hours=8))
+
+
+def _safe_load_config_text(text: str) -> dict:
+    if yaml is not None:
+        return yaml.safe_load(text) or {}
+    # Minimal fallback parser for dry-run when PyYAML is unavailable.
+    # Supports only top-level "key: value" pairs.
+    out = {}
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or ":" not in s:
+            continue
+        k, v = s.split(":", 1)
+        out[k.strip()] = v.strip().strip("'\"")
+    return out
+
+
+def _safe_dump_config(cfg: dict) -> str:
+    if yaml is not None:
+        return yaml.safe_dump(cfg, sort_keys=False)
+    import json
+    return json.dumps(cfg, ensure_ascii=False, indent=2)
 
 
 class _Tee:
@@ -97,6 +122,61 @@ def _run_subprocess(cmd: list) -> subprocess.CompletedProcess:
         stdout="".join(stdout_lines),
         stderr="".join(stderr_lines),
     )
+
+
+def _write_prompt_efficiency_report(round_dir: Path):
+    """Create a markdown report from prompt compaction and guard artifacts."""
+    items = [
+        ("perception_prompt_compaction.json", "Perception Compaction"),
+        ("analyst_prompt_compaction.json", "Analyst Compaction"),
+        ("generator_prompt_compaction.json", "Generator Compaction"),
+        ("perception_guard.json", "Perception Guard"),
+        ("analyst_guard.json", "Analyst Guard"),
+        ("reflection_guard.json", "Reflection Guard"),
+    ]
+    lines = ["# Prompt Efficiency Report", ""]
+    for fname, title in items:
+        p = round_dir / fname
+        if not p.exists():
+            continue
+        lines.append(f"## {title}")
+        try:
+            payload = json.loads(p.read_text("utf-8"))
+        except Exception:
+            lines.append("- Failed to parse JSON.")
+            lines.append("")
+            continue
+        if "passed" in payload:
+            lines.append(f"- passed: {payload.get('passed')}")
+            lines.append(f"- env_leakage: {payload.get('env_leakage')}")
+            lines.append(f"- implicit_env_hint: {payload.get('implicit_env_hint')}")
+            lines.append(f"- absolute_threshold_language: {payload.get('absolute_threshold_language')}")
+        else:
+            lines.append("| Section | Source | Kept | Dropped | Keep Ratio |")
+            lines.append("|---|---:|---:|---:|---:|")
+            for sec, st in payload.items():
+                if not isinstance(st, dict):
+                    continue
+                src = st.get("source_lines", 0)
+                kept = st.get("kept_lines", 0)
+                drop = st.get("dropped_lines", max(0, src - kept))
+                ratio = (kept / src) if src else 0.0
+                lines.append(f"| {sec} | {src} | {kept} | {drop} | {ratio:.3f} |")
+        lines.append("")
+    (round_dir / "prompt_efficiency_report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+class EventCoordinator:
+    """Minimal event-driven coordinator for multi-agent orchestration (Phase-2 step 1)."""
+    def __init__(self):
+        self._handlers: dict[str, list] = {}
+
+    def on(self, event_name: str, fn):
+        self._handlers.setdefault(event_name, []).append(fn)
+
+    def emit(self, event_name: str, payload: dict):
+        for fn in self._handlers.get(event_name, []):
+            fn(payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -237,6 +317,17 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     output_dir.mkdir(parents=True, exist_ok=True)
 
     memory_system = MemorySystem(run_dir)
+    coordinator = EventCoordinator()
+    # Dynamic role policy (Phase-2), configurable from config.phase2.role_policy.
+    rp = (config.get("phase2", {}) or {}).get("role_policy", {})
+    early_max = int(rp.get("early_max_round", 2))
+    mid_max = int(rp.get("mid_max_round", 5))
+    role_stage = "early" if round_num <= early_max else ("mid" if round_num <= mid_max else "late")
+    coordinator.on("perception.completed", lambda p: print(f"  [event] perception.completed: round={p.get('round')}"))
+    coordinator.on("analyst.started", lambda p: print(f"  [event] analyst.started: round={p.get('round')}"))
+    coordinator.on("analyst.completed", lambda p: print(f"  [event] analyst.completed: changes={p.get('changed_count', '?')}"))
+    coordinator.on("constraints.completed", lambda p: print(f"  [event] constraints.completed: count={p.get('count', 0)}"))
+    coordinator.on("critic.completed", lambda p: print(f"  [event] critic.completed: status={p.get('status')}"))
 
     # Load previous round's perception report for analyst prompt
     prev_perception_path = prev_round_dir / "perception_report.md"
@@ -251,6 +342,7 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     print(f"  Multi-Agent Iteration — Round {round_num}")
     print(f"  Run dir: {run_dir.name}")
     print(f"  Previous: round{round_num - 1}")
+    print(f"  Role stage: {role_stage}")
     print(f"{'='*60}")
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -264,6 +356,12 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
         prev_perception_result = run_perception_agent(
             prev_round_dir, api_key, model, temperature=0.3,
         )
+        guard_path = prev_round_dir / "perception_guard.json"
+        if guard_path.exists():
+            g = json.loads(guard_path.read_text("utf-8"))
+            if not g.get("passed", True):
+                print(f"  [guard] perception output flagged: {g}")
+        coordinator.emit("perception.completed", {"round": round_num - 1, "report_len": len(prev_perception_result)})
         print(f"  Perception report saved → {prev_round_dir / 'perception_report.md'}")
     elif dry_run:
         print("  [dry-run] Creating placeholder perception report")
@@ -277,16 +375,58 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     from agents.analyst_agent import run_analyst_agent
 
     if not dry_run:
+        coordinator.emit("analyst.started", {"round": round_num})
         proposal = run_analyst_agent(
             prev_round_dir, round_num, memory_system,
             api_key, model, temperature=0.4,
         )
+        analyst_guard_path = prev_round_dir / "analyst_guard.json"
+        if analyst_guard_path.exists():
+            g = json.loads(analyst_guard_path.read_text("utf-8"))
+            if not g.get("passed", True):
+                print("  [guard] analyst output failed zero-shot guard, one retry with lower temperature.")
+                proposal = run_analyst_agent(
+                    prev_round_dir, round_num, memory_system,
+                    api_key, model, temperature=0.2,
+                )
+        coordinator.emit("analyst.completed", {"round": round_num, "changed_count": proposal.get("changed_count", 0)})
         print(f"  Proposal saved → {prev_round_dir / 'analyst_proposal.json'}")
         print(f"  Diagnosis: {proposal.get('diagnosis', 'N/A')[:100]}")
         print(f"  Changes: {proposal.get('changed_count', 0)}")
     else:
         proposal = {"diagnosis": "dry-run", "changed_count": 0, "proposed_changes": []}
         print("  [dry-run] Skipping analyst LLM call")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Step 2.5: Constraints + Critic Agents (Phase-2 dynamic role expansion)
+    # ─────────────────────────────────────────────────────────────────────────
+    constraints_report = {"violations": [], "count": 0}
+    critic_report = {"status": "pass", "critic_flags": []}
+    if role_stage in ("mid", "late"):
+        print("\n  --- Step 2.5: Constraints Agent + Critic Agent ---")
+        from agents.constraints_agent import run_constraints_agent
+        from agents.critic_agent import run_critic_agent
+        constraints_report = run_constraints_agent(prev_round_dir) if not dry_run else {"violations": [], "count": 0}
+        coordinator.emit("constraints.completed", constraints_report)
+        critic_report = run_critic_agent(prev_round_dir, proposal, constraints_report) if not dry_run else {"status": "pass", "critic_flags": []}
+        coordinator.emit("critic.completed", critic_report)
+        if critic_report.get("status") == "needs_revision":
+            proposal.setdefault("risk_mitigation", "")
+            proposal["risk_mitigation"] = (proposal["risk_mitigation"] + " | Critic: " + "; ".join(critic_report.get("critic_flags", []))).strip(" |")
+            # Analyst feedback loop: one revision pass with critic/constraints context.
+            if not dry_run:
+                print("  [feedback-loop] Re-running Analyst with Critic/Constraints feedback...")
+                from agents.analyst_agent import run_analyst_agent
+                (prev_round_dir / "critic_feedback.json").write_text(json.dumps({
+                    "critic_report": critic_report,
+                    "constraints_report": constraints_report,
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
+                revised = run_analyst_agent(
+                    prev_round_dir, round_num, memory_system,
+                    api_key, model, temperature=0.35,
+                )
+                revised.setdefault("risk_mitigation", proposal.get("risk_mitigation", ""))
+                proposal = revised
 
     # ─────────────────────────────────────────────────────────────────────────
     # Step 3: Generator Agent — generate validated reward code
@@ -318,12 +458,28 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
             (output_dir / f"generator_response{suffix}.md").write_text(r, encoding="utf-8")
         if code is None:
             print("  ERROR: Generator agent failed to produce valid code after retries!")
-            print("  Falling back to copying previous round's reward function.")
-            prev_reward = prev_round_dir / "reward_fn_source.py"
-            if prev_reward.exists():
-                code = prev_reward.read_text("utf-8")
-            else:
-                raise RuntimeError("No reward function available and generation failed.")
+            # Phase-2 generator↔analyst clarification loop: ask analyst for one revision with generator feedback.
+            print("  [feedback-loop] Re-running Analyst with Generator failure context...")
+            from agents.analyst_agent import run_analyst_agent
+            gen_feedback = {
+                "generator_failed": True,
+                "recent_generator_response": gen_responses[-1] if gen_responses else "",
+            }
+            (prev_round_dir / "generator_feedback.json").write_text(json.dumps(gen_feedback, ensure_ascii=False, indent=2), encoding="utf-8")
+            proposal = run_analyst_agent(prev_round_dir, round_num, memory_system, api_key, model, temperature=0.35)
+            gen_result = run_generator_agent(
+                prev_round_dir, proposal, memory_system,
+                api_key, model, temperature=0.25,
+                constraints=constraints,
+            )
+            code, gen_prompt, gen_responses = gen_result
+            if code is None:
+                print("  Fallback: copying previous round's reward function.")
+                prev_reward = prev_round_dir / "reward_fn_source.py"
+                if prev_reward.exists():
+                    code = prev_reward.read_text("utf-8")
+                else:
+                    raise RuntimeError("No reward function available and generation failed.")
     else:
         # Dry run: copy previous reward
         prev_reward = prev_round_dir / "reward_fn_source.py"
@@ -343,6 +499,7 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     print(f"  Reward source → {reward_path}")
 
     if dry_run or skip_train:
+        _write_prompt_efficiency_report(prev_round_dir)
         print("\n  [dry-run/skip-train] Stopping before training.")
         return {
             "round": round_num,
@@ -377,7 +534,7 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
     round_config["n_envs"] = n_envs
     round_config_path = output_dir / "config.yaml"
     with open(round_config_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(round_config, f, sort_keys=False)
+        f.write(_safe_dump_config(round_config))
 
     # Build CLI args for train.py
     cmd = [
@@ -564,7 +721,7 @@ def main():
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if not api_key and args.config:
         with open(args.config, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+            cfg = _safe_load_config_text(f.read())
         api_key = cfg.get("llm_api_key", api_key)
     if not api_key:
         print("ERROR: DEEPSEEK_API_KEY not set")
@@ -580,7 +737,7 @@ def main():
         # Determine experiment directory
         env_name = env_dir.name
         timestamp = datetime.now(BEIJING).strftime("%y%m%d%H%M")
-        config_data = yaml.safe_load(config_path.read_text("utf-8")) if config_path else {}
+        config_data = _safe_load_config_text(config_path.read_text("utf-8")) if config_path else {}
         total_steps = config_data.get("total_timesteps", "unknown")
         exp_dir = Path(__file__).resolve().parent.parent / "runs" / f"{env_name.lower()}_{timestamp}_{total_steps}"
         exp_dir.mkdir(parents=True, exist_ok=True)
@@ -608,7 +765,7 @@ def main():
         # Load config first so env_id is available for env dir matching
         config_data = {}
         if args.config:
-            config_data = yaml.safe_load(Path(args.config).read_text("utf-8"))
+            config_data = _safe_load_config_text(Path(args.config).read_text("utf-8"))
         else:
             config_data = _load_experiment_config(exp_dir)
 
@@ -619,7 +776,7 @@ def main():
         exp_config = exp_dir / "config.yaml"
         if not exp_config.exists():
             with open(exp_config, "w", encoding="utf-8") as f:
-                yaml.safe_dump(config_data, f, sort_keys=False)
+                f.write(_safe_dump_config(config_data))
 
         result = run_iteration(
             exp_dir, env_dir, args.round, exploration_path,
@@ -637,7 +794,7 @@ def main():
         # Load config first so env_id is available for env dir matching
         config_data = {}
         if args.config:
-            config_data = yaml.safe_load(Path(args.config).read_text("utf-8"))
+            config_data = _safe_load_config_text(Path(args.config).read_text("utf-8"))
         else:
             config_data = _load_experiment_config(exp_dir)
 
@@ -648,7 +805,7 @@ def main():
         exp_config = exp_dir / "config.yaml"
         if not exp_config.exists():
             with open(exp_config, "w", encoding="utf-8") as f:
-                yaml.safe_dump(config_data, f, sort_keys=False)
+                f.write(_safe_dump_config(config_data))
 
         total_rounds = config_data.get("rounds", 5)
         memory = MemorySystem(exp_dir)
@@ -684,7 +841,7 @@ def main():
         env_dir = Path(args.env_dir).resolve()
         exploration_path = Path(args.exploration).resolve()
         config_path = Path(args.config).resolve()
-        config_data = yaml.safe_load(config_path.read_text("utf-8"))
+        config_data = _safe_load_config_text(config_path.read_text("utf-8"))
         env_name = env_dir.name
         total_rounds = config_data.get("rounds", 5)
 
@@ -714,7 +871,7 @@ def main():
 
         # Save experiment-level config (without API key)
         public_config = {k: v for k, v in config_data.items() if k != "llm_api_key"}
-        (exp_dir / "config.yaml").write_text(yaml.safe_dump(public_config, sort_keys=False), encoding="utf-8")
+        (exp_dir / "config.yaml").write_text(_safe_dump_config(public_config), encoding="utf-8")
 
         # ── Phase 2: Train round 0 ──
         print("\n>>> Phase 2/4: Training Round 0")
@@ -723,7 +880,7 @@ def main():
 
         # Full config (without API key) goes into round0 for train.py
         round0_config_path = round0_dir / "config.yaml"
-        (round0_config_path).write_text(yaml.safe_dump(public_config, sort_keys=False), encoding="utf-8")
+        (round0_config_path).write_text(_safe_dump_config(public_config), encoding="utf-8")
 
         cmd = [
             sys.executable, str(train_script),
@@ -841,7 +998,7 @@ def _load_experiment_config(exp_dir: Path) -> dict:
     if round0_dir.exists():
         config_path = round0_dir / "config.yaml"
         if config_path.exists():
-            return yaml.safe_load(config_path.read_text("utf-8"))
+            return _safe_load_config_text(config_path.read_text("utf-8"))
     return {
         "total_timesteps": 2_000_000,
         "n_envs": 8,

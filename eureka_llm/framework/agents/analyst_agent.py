@@ -26,14 +26,15 @@ if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
 from llm_call import call_llm
 from memory.memory_system import MemorySystem
+from prompt_guard import validate_zero_shot_output
+from prompt_compaction import load_prompt_policy, summarize_structured_lines, write_compaction_stats
 
 ANALYST_SYSTEM_PROMPT = """You are the Analyst Agent — the core reasoning engine of a multi-agent
 reward function design system. You use a Thought → Action → Observation loop
 to diagnose training problems and produce structured proposals."""
 
-
 def build_analyst_prompt(run_dir: Path, round_num: int,
-                          memory_system: MemorySystem) -> str:
+                          memory_system: MemorySystem) -> tuple[str, dict]:
     """Build the full analyst prompt with context from multiple sources."""
     sys_prompt_path = Path(__file__).resolve().parent.parent.parent / "templates" / "analyst_system_prompt.txt"
     sys_prompt = sys_prompt_path.read_text("utf-8") if sys_prompt_path.exists() else ANALYST_SYSTEM_PROMPT
@@ -42,7 +43,11 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
     perception_report = ""
     perception_path = run_dir / "perception_report.md"
     if perception_path.exists():
-        perception_report = perception_path.read_text("utf-8")
+        perception_report, compaction_stats["perception_report"] = summarize_structured_lines(
+            perception_path.read_text("utf-8"),
+            max_lines=policy.get("max_lines_markdown", 80),
+            keywords=("diagnosis", "principle", "mean", "std"),
+        )
 
     # Load current reward function
     current_reward = ""
@@ -66,8 +71,13 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
         task_manifest_short = task_manifest[:1000]
 
     # Load cross-round memory
-    lessons = memory_system.get_lessons(max_lines=200)
+    lessons, compaction_stats["memory_lessons"] = summarize_structured_lines(
+        memory_system.get_lessons(max_lines=120),
+        max_lines=policy.get("max_lines_memory", 60),
+        keywords=("round", "lesson", "why", "fix"),
+    )
     recent_history = memory_system.get_recent_lessons(n=3)
+    analyst_belief = memory_system.get_belief("analyst")
 
     # Load last round's analyst proposal (if any)
     prev_proposal = ""
@@ -113,6 +123,25 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
         sections.append("```")
         sections.append("")
 
+    critic_feedback_path = run_dir / "critic_feedback.json"
+    if critic_feedback_path.exists():
+        sections.append("### Critic/Constraints Feedback (requires revision-aware proposal)")
+        sections.append("```json")
+        summarized, st = summarize_structured_lines(critic_feedback_path.read_text("utf-8"), 50, ("critic", "principle", "risk"))
+        compaction_stats["critic_feedback"] = st
+        sections.append(summarized)
+        sections.append("```")
+        sections.append("")
+    generator_feedback_path = run_dir / "generator_feedback.json"
+    if generator_feedback_path.exists():
+        sections.append("### Generator Feedback (translation/runtime failure context)")
+        sections.append("```json")
+        summarized, st = summarize_structured_lines(generator_feedback_path.read_text("utf-8"), 40, ("generator", "error", "failed"))
+        compaction_stats["generator_feedback"] = st
+        sections.append(summarized)
+        sections.append("```")
+        sections.append("")
+
     if recent_history:
         sections.append("### Recent Round History")
         sections.append(recent_history)
@@ -122,6 +151,12 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
         sections.append("### Cross-Round Lessons (MEMORY.md)")
         sections.append(lessons)
         sections.append("")
+    if analyst_belief.get("history"):
+        sections.append("### Analyst Persistent Belief State")
+        sections.append("```json")
+        sections.append(json.dumps({"recent": analyst_belief["history"][-5:]}, ensure_ascii=False, indent=2))
+        sections.append("```")
+        sections.append("")
 
     # Instructions for the ReAct loop
     sections.append("---")
@@ -130,7 +165,7 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
 Use the Thought → Action → Observation loop.
 
 **Thought:** What is happening? What is the key problem?
-**Action:** query_memory | calculate_reward_budget | compare_rounds
+**Action:** query_memory | calculate_reward_budget | compare_rounds | analyze_efficiency | detect_principle_violation | ask_perception
 **Observation:** Tool output
 
 When you have enough information, output your FINAL ANSWER as a JSON proposal:
@@ -138,7 +173,8 @@ When you have enough information, output your FINAL ANSWER as a JSON proposal:
 ```json
 {
     "diagnosis": "...",
-    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | other",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
     "changed_count": <1-3>,
     "proposed_changes": [...],
     "predicted_effect": "...",
@@ -151,7 +187,7 @@ CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
 metrics_fn MUST be present in the generated code.
 """)
 
-    return "\n".join(sections)
+    return "\n".join(sections), compaction_stats
 
 
 class ReActLoop:
@@ -164,6 +200,7 @@ class ReActLoop:
     def __init__(self, system_prompt: str, memory_system: MemorySystem,
                  behavior_metrics: dict, component_means: dict,
                  reward_code: str, api_key: str, model: str = "deepseek-reasoner",
+                 perception_query_fn=None,
                  max_steps: int = 10):
         self.system_prompt = system_prompt
         self.memory = memory_system
@@ -172,6 +209,7 @@ class ReActLoop:
         self.reward_code = reward_code
         self.api_key = api_key
         self.model = model
+        self.perception_query_fn = perception_query_fn
         self.max_steps = max_steps
         self.conversation_history = []
 
@@ -251,6 +289,9 @@ class ReActLoop:
             r"query_memory:\s*(.+?)(?:\n|$)",
             r"calculate_reward_budget:\s*(.+?)(?:\n|$)",
             r"compare_rounds:\s*(.+?)(?:\n|$)",
+            r"analyze_efficiency:\s*(.*?)(?:\n|$)",
+            r"detect_principle_violation:\s*(.*?)(?:\n|$)",
+            r"ask_perception:\s*(.*?)(?:\n|$)",
         ]:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
@@ -291,6 +332,42 @@ class ReActLoop:
             except Exception as e:
                 return f"Error comparing rounds: {e}"
 
+        elif name == "analyze_efficiency":
+            action_mag = self.behavior_metrics.get("action_magnitude_mean")
+            velocity = self.behavior_metrics.get("velocity_mean")
+            entropy = self.behavior_metrics.get("policy_entropy")
+            notes = []
+            if action_mag is not None and velocity is not None:
+                ratio = velocity / max(abs(action_mag), 1e-6)
+                notes.append(f"velocity/action_magnitude={ratio:.4f}")
+                if abs(action_mag) > 0.9 and abs(ratio) < 0.3:
+                    notes.append("High action amplitude with low movement gain: potential energy inefficiency.")
+            if entropy is not None and entropy < 0.1:
+                notes.append("Low policy entropy suggests potential exploration collapse.")
+            if not notes:
+                notes.append("Insufficient explicit efficiency metrics in behavior_metrics; use perception report cross-metric evidence.")
+            return "\n".join(notes)
+
+        elif name == "detect_principle_violation":
+            violations = []
+            mean_len = self.behavior_metrics.get("mean_length")
+            if mean_len is not None and mean_len < 0.5:
+                violations.append("termination_exploitation: episodes may be terminating too quickly relative to task horizon.")
+            zero_std_components = [k for k, v in self.component_means.items() if isinstance(v, (int, float)) and abs(v) < 1e-9]
+            if zero_std_components:
+                violations.append(f"inactive_component: near-zero components detected: {zero_std_components[:3]}")
+            if not violations:
+                violations.append("No hard violation detected from parsed scalars; inspect perception narrative for alignment/coverage/efficiency patterns.")
+            return "\n".join(violations)
+
+        elif name == "ask_perception":
+            if self.perception_query_fn is None:
+                return "Perception follow-up unavailable in this run."
+            try:
+                return self.perception_query_fn(inp)
+            except Exception as e:
+                return f"Perception follow-up error: {e}"
+
         return f"Unknown tool: {name}"
 
     def _extract_json(self, text: str) -> str:
@@ -329,7 +406,12 @@ def run_analyst_agent(run_dir: Path, round_num: int,
         reward_code = reward_path.read_text("utf-8")
 
     # Build system prompt
-    system_prompt = build_analyst_prompt(run_dir, round_num, memory_system)
+    system_prompt, compaction_stats = build_analyst_prompt(run_dir, round_num, memory_system)
+
+    # Perception follow-up bridge (Phase-2: bidirectional communication)
+    def _perception_query(question: str) -> str:
+        from agents.perception_agent import answer_perception_query
+        return answer_perception_query(run_dir, question)
 
     # Run ReAct loop
     loop = ReActLoop(
@@ -340,12 +422,14 @@ def run_analyst_agent(run_dir: Path, round_num: int,
         reward_code=reward_code,
         api_key=api_key,
         model=model,
+        perception_query_fn=_perception_query,
     )
 
     result_text, conversation_history = loop.run(temperature=temperature)
 
     # Save artifacts
     (run_dir / "analyst_prompt.txt").write_text(system_prompt, encoding="utf-8")
+    write_compaction_stats(run_dir / "analyst_prompt_compaction.json", compaction_stats)
     (run_dir / "analyst_conversation.json").write_text(
         json.dumps(conversation_history, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -376,6 +460,16 @@ def run_analyst_agent(run_dir: Path, round_num: int,
     # Save proposal
     output_path = run_dir / "analyst_proposal.json"
     output_path.write_text(json.dumps(proposal, indent=2, ensure_ascii=False), encoding="utf-8")
+    (run_dir / "analyst_guard.json").write_text(
+        json.dumps(validate_zero_shot_output(json.dumps(proposal, ensure_ascii=False)), ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+    memory_system.update_belief("analyst", {
+        "round": round_num,
+        "diagnosis": proposal.get("diagnosis", "")[:300],
+        "violated_principle": proposal.get("violated_principle", "none"),
+        "changed_count": proposal.get("changed_count", 0),
+    })
 
     return proposal
 
@@ -399,3 +493,5 @@ def _extract_metrics_from_report(report: str, behavior: dict, components: dict):
                     behavior["mean_length"] = float(nums[0])
             # Also extract any env-specific metrics (k=v pairs)
             # These are already handled via env_metadata in the analyst prompt
+    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "analyst")
+    compaction_stats = {}

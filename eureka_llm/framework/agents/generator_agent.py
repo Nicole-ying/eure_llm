@@ -25,15 +25,14 @@ _framework_dir = Path(__file__).resolve().parent.parent
 if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
 from llm_call import call_llm
+from prompt_compaction import load_prompt_policy, summarize_structured_lines, write_compaction_stats
 
 
 GENERATOR_SYSTEM_PROMPT = """You are the Generator Agent — an AI that translates structured proposals
 into correct, runnable Python code. You apply precise, targeted changes."""
-
-
 def build_generator_prompt(run_dir: Path, proposal: dict,
                             memory_system,
-                            constraints: str = "") -> str:
+                            constraints: str = "") -> tuple[str, dict]:
     """Build prompt for the generator agent."""
     template_path = Path(__file__).resolve().parent.parent.parent / "templates" / "generator_prompt.txt"
     template = template_path.read_text("utf-8") if template_path.exists() else _fallback_generator_prompt()
@@ -47,14 +46,17 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
     # Load task manifest
     task_manifest = memory_system.get_task_manifest()
     if task_manifest:
-        # Keep only the first 1000 chars for context
-        task_manifest = task_manifest[:2000]
+        task_manifest, stats["task_manifest"] = summarize_structured_lines(
+            task_manifest, policy.get("max_lines_markdown", 80), ("task", "termination", "observation")
+        )
 
     # Load perception report
     perception = ""
     perception_path = run_dir / "perception_report.md"
     if perception_path.exists():
-        perception = perception_path.read_text("utf-8")
+        perception, stats["perception_report"] = summarize_structured_lines(
+            perception_path.read_text("utf-8"), policy.get("max_lines_markdown", 80), ("diagnosis", "principle", "mean", "std")
+        )
 
     # Build the sections
     sections = [
@@ -86,7 +88,7 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
         sections.append("## Environment Constraints")
         sections.append(constraints)
 
-    return "\n".join(sections)
+    return "\n".join(sections), stats
 
 
 def validate_generated_code(code: str) -> list[str]:
@@ -159,7 +161,8 @@ def run_generator_agent(run_dir: Path, proposal: dict,
     Returns:
         Validated code string, or None if all retries failed
     """
-    prompt = build_generator_prompt(run_dir, proposal, memory_system, constraints)
+    prompt, compaction_stats = build_generator_prompt(run_dir, proposal, memory_system, constraints)
+    write_compaction_stats(run_dir / "generator_prompt_compaction.json", compaction_stats)
     print(f"  Generator prompt: {len(prompt)} chars")
     all_responses = []
 
@@ -212,3 +215,5 @@ CRITICAL:
 - No Box2D object storage
 - All imports inside functions
 """
+    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "generator")
+    stats = {}
