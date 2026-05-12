@@ -17,10 +17,6 @@ from llm_call import call_llm
 from prompt_guard import validate_zero_shot_output
 
 
-REFLECTION_SYSTEM_PROMPT = """You are a Reflection Agent. You compare predictions with actual outcomes
-to generate causal lessons. Each lesson helps future iterations avoid repeating mistakes."""
-
-
 def build_reflection_prompt(run_dir: Path, round_num: int,
                              memory_system) -> str:
     """Build reflection prompt comparing prediction vs reality."""
