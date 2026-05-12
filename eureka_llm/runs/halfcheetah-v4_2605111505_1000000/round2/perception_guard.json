@@ -1,0 +1,12 @@
+{
+  "env_leakage": false,
+  "implicit_env_hint": false,
+  "absolute_threshold_language": true,
+  "env_hit_patterns": [],
+  "implicit_hit_patterns": [],
+  "absolute_hit_patterns": [
+    "[<>]=?\\s*\\d+(\\.\\d+)?",
+    "\\bexactly\\s+\\d+(\\.\\d+)?\\b"
+  ],
+  "passed": false
+}

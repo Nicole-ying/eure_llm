@@ -21,7 +21,8 @@ Generate a complete, valid Python module with two functions:
 ### def metrics_fn(env, action) -> dict
 - MUST be present (this is required!)
 - 3-6 task-level metrics independent of the reward
-- Access env state directly via `env.xxx` (the caller already passes unwrapped env)
+- **Find attributes from step() source**: Look at the step() source code from the Task Manifest. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. Do NOT guess attribute names not seen there.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let a single failed lookup crash the whole function.
 - Use getattr(env, '_pre_step_state', {}) for cross-step values
 - Do NOT return reward components
 - Do NOT just return raw observation readings

@@ -1,0 +1,20 @@
+{
+  "metrics_table_total_candidates": 6,
+  "metrics_table_selected": [
+    "dist_to_pad",
+    "vert_speed_abs",
+    "height",
+    "angle_abs",
+    "legs_ground",
+    "survival_fraction"
+  ],
+  "env_metrics_total_candidates": 6,
+  "env_metrics_selected": [
+    "angle_abs",
+    "dist_to_pad",
+    "legs_ground",
+    "vert_speed_abs",
+    "height",
+    "survival_fraction"
+  ]
+}

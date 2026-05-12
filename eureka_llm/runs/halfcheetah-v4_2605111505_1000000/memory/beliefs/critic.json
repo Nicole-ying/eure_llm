@@ -1,0 +1,21 @@
+{
+  "agent": "critic",
+  "version": 1,
+  "history": [
+    {
+      "round": "round2",
+      "status": "pass",
+      "flags": []
+    },
+    {
+      "round": "round3",
+      "status": "pass",
+      "flags": []
+    },
+    {
+      "round": "round4",
+      "status": "pass",
+      "flags": []
+    }
+  ]
+}

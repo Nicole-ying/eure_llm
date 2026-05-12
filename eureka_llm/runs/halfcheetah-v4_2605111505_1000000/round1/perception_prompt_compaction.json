@@ -1,0 +1,10 @@
+{
+  "metrics_table_total_candidates": 1,
+  "metrics_table_selected": [
+    "error"
+  ],
+  "env_metrics_total_candidates": 1,
+  "env_metrics_selected": [
+    "error"
+  ]
+}

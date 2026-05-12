@@ -1,0 +1,56 @@
+{
+  "violations": [
+    {
+      "principle": "reward_goal_alignment",
+      "severity": "high",
+      "evidence": {
+        "component": "r_alive",
+        "mean": 0.12,
+        "std": 0.0
+      },
+      "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+    },
+    {
+      "principle": "reward_goal_alignment",
+      "severity": "high",
+      "evidence": {
+        "component": "r_crash_penalty",
+        "mean": -10.0,
+        "std": 0.0
+      },
+      "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+    },
+    {
+      "principle": "reward_goal_alignment",
+      "severity": "high",
+      "evidence": {
+        "component": "r_landing_bonus",
+        "mean": 20.0,
+        "std": 0.0
+      },
+      "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+    },
+    {
+      "principle": "temporal_consistency",
+      "severity": "medium",
+      "evidence": {
+        "metric": "vert_speed_abs",
+        "early_mean": 12.0721,
+        "late_mean": 0.6381,
+        "relative_drift": 0.9471
+      },
+      "diagnosis": "Behavior metric shifted strongly between early and late training windows; intra-policy dynamics may be inconsistent."
+    },
+    {
+      "principle": "termination_exploitation",
+      "severity": "medium",
+      "evidence": {
+        "length_mean": 467.8,
+        "length_max": 1904,
+        "ratio": 0.246
+      },
+      "diagnosis": "Average episode length is far below observed max; agent may be exploiting early termination dynamics."
+    }
+  ],
+  "count": 5
+}

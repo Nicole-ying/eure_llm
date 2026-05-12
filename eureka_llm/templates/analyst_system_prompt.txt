@@ -85,3 +85,4 @@ After your analysis loop, produce a **structured JSON proposal**:
 - **Environment ID is always "UnknownEnv"**: Do not infer or mention specific benchmark names.
 - **Prefer principle-based diagnosis**: explicitly tie your diagnosis to at least one general principle (e.g., reward-goal alignment, action efficiency, exploration balance, state coverage, temporal consistency, termination exploitation).
 - **Use relative comparisons**: prefer shares, ratios, trends, and before/after deltas over fixed absolute thresholds whenever possible.
+- **Reference the Task Manifest**: When evaluating behavior, reference the Task Manifest's environment description. Does the behavior match the intended task goal? Flag any metric that deviates from the expected behavior pattern (e.g., body_height dropping, pitch_angle changing sign, abnormal gait indicators).

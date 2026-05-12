@@ -22,6 +22,11 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from time import perf_counter
 
+# Headless rendering: use EGL for MuJoCo, dummy SDL driver for PyGame envs.
+# Must be set before any MuJoCo/gymnasium imports that trigger GL init.
+os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
 import yaml
 import numpy as np
 import torch
@@ -324,9 +329,12 @@ class TrainCallback(BaseCallback):
             vn_path = self._get_latest_vn()
             gif_path = self.run_dir / "gifs" / f"rollout_{self.num_timesteps:07d}.gif"
             print(f"  [gif t={self.num_timesteps}] -> {gif_path.name}")
-            record_gif(self.env_id, self.model, vn_path, gif_path,
-                       max_steps=self.cfg.get("gif_max_steps", 2000),
-                       fps=self.cfg.get("gif_fps", 30))
+            try:
+                record_gif(self.env_id, self.model, vn_path, gif_path,
+                           max_steps=self.cfg.get("gif_max_steps", 2000),
+                           fps=self.cfg.get("gif_fps", 30))
+            except Exception as e:
+                print(f"  [gif t={self.num_timesteps}] SKIPPED (render not available: {e})")
             self.gif_steps.pop(0)
             self.next_gif = self.gif_steps[0] if self.gif_steps else None
         return True

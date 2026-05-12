@@ -1,0 +1,31 @@
+{
+  "episodes": 10,
+  "mean_length": 72.2,
+  "env_metrics": {
+    "dist_to_pad": {
+      "mean": 9.983557,
+      "std": 2.403974
+    },
+    "height": {
+      "mean": 7.170836,
+      "std": 2.936848
+    },
+    "angle_abs": {
+      "mean": 0.084562,
+      "std": 0.05977
+    },
+    "vert_speed_abs": {
+      "mean": 6.694745,
+      "std": 4.062461
+    },
+    "legs_ground": {
+      "mean": 0.020776,
+      "std": 0.152033
+    },
+    "survival_fraction": {
+      "mean": 0.0,
+      "std": 0.0
+    }
+  },
+  "timesteps": 200000
+}

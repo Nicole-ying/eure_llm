@@ -18,7 +18,7 @@ except ImportError:
 
 
 def call_llm(prompt: str, api_key: str, model: str = "deepseek-reasoner",
-             temperature: float = 0.6, timeout: float = 300.0) -> str:
+             temperature: float = 0.6, timeout: float = 600.0) -> str:
     """Call DeepSeek API and return response text."""
     import httpx
     if OpenAI is None:

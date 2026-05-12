@@ -8,6 +8,10 @@ You have NO access to the official reward function — it has been excluded from
 - Action space: {action_desc}
 - Time limit per episode: {max_ep_steps} steps
 
+### Task Description
+
+{task_description}
+
 ### Step Source Code (reward excluded)
 
 ```python
@@ -149,6 +153,8 @@ Rules:
 - Combine observations into higher-level indicators (e.g., distance-to-goal, stability, efficiency)
 - NOT just copies of reward components or raw observation readings
 - NOT reward values — metrics must be reward-agnostic
+- **Find attributes from step() source**: Look at the step() source code above. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. For example, if step() sets `self.lander`, use `env.lander`. Do NOT guess attribute names not seen in step() source.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let any single failed lookup crash the whole function.
 
 Put compute_reward and metrics_fn in a single Python code block:
 

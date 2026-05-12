@@ -1,0 +1,14 @@
+{
+  "perception_report": {
+    "source_lines": 65,
+    "candidate_lines": 61,
+    "kept_lines": 61,
+    "dropped_lines": 4
+  },
+  "memory_lessons": {
+    "source_lines": 5,
+    "candidate_lines": 4,
+    "kept_lines": 4,
+    "dropped_lines": 1
+  }
+}

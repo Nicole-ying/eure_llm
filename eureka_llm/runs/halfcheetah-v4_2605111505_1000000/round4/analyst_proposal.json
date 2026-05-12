@@ -1,0 +1,23 @@
+{
+  "diagnosis": "Exploration collapse: the policy is stuck in a deterministic high-speed gait that maximizes the dominant forward reward (89.4% of total) while the exploration bonus (weight 0.1) is too weak to induce behavioral variation, and the absence of any noise mechanism prevents genuine state-space exploration.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_explore weight",
+      "current_code": "r_explore = 0.1 * std_vel",
+      "new_code": "r_explore = 1.0 * std_vel",
+      "reason": "Increasing the exploration bonus weight from 0.1 to 1.0 makes it comparable to the forward reward (~23.64) when velocity variance is moderate (e.g., std_vel ~15 yields r_explore=15). This provides a strong, direct incentive for the agent to try different speeds and gaits, directly addressing exploration balance and state coverage. The net reward remains positive because the bonus scales with actual variance, and any increase in variance is rewarded proportionally."
+    },
+    {
+      "component": "action noise injection",
+      "current_code": "No action noise present",
+      "new_code": "At the beginning of compute_reward, after receiving `action`, add: action = action + np.random.normal(0, 0.1, size=6). This modifies the action before it is used for the smoothness penalty and environment step.",
+      "reason": "Adding Gaussian action noise (σ=0.1) forces stochastic exploration by perturbing the policy's outputs. This breaks the deterministic periodic attractor, enabling the exploration bonus to actually detect and reward novel velocity states. Without noise, the policy can trivially satisfy the std bonus by maintaining a fixed oscillation. Noise ensures genuine state-space coverage and aligns with the memory's unanimous recommendation from all previous rounds."
+    }
+  ],
+  "predicted_effect": "The agent will initially show increased velocity variance and slightly lower forward speed due to noise, but over training the exploration bonus will drive it to discover higher-speed gaits or more efficient patterns. Episode length may occasionally drop below 1000 if the noise causes instability, but that is a sign of healthy exploration. Eventually, forward speed should surpass the previous plateau, and the agent will explore a wider range of velocities and postures.",
+  "max_risk": "Action noise may cause the agent to waste energy or adopt highly erratic movements, reducing immediate forward reward and potentially leading to a temporary reward collapse (if forward speed drops significantly and exploration bonus does not compensate quickly). The increased exploration weight might cause the agent to prioritize variance over absolute speed, resulting in a speed-reward tradeoff. If noise is too high, the policy may become unstable and fail to maintain upright posture.",
+  "risk_mitigation": "Monitor forward_velocity mean and std, action_magnitude, and total reward per step. If forward velocity drops by more than 30% after 100k timesteps, reduce noise σ to 0.05 or add an annealing schedule. Also track episode length – if it becomes highly variable (>200 steps variation), it's a positive sign; if it drops below 500 on average, the noise may be too high. If forward velocity remains below baseline after 300k steps, reduce r_explore weight to 0.5."
+}

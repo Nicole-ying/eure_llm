@@ -1,0 +1,14 @@
+{
+  "task_manifest": {
+    "source_lines": 162,
+    "candidate_lines": 23,
+    "kept_lines": 23,
+    "dropped_lines": 139
+  },
+  "perception_report": {
+    "source_lines": 65,
+    "candidate_lines": 61,
+    "kept_lines": 61,
+    "dropped_lines": 4
+  }
+}

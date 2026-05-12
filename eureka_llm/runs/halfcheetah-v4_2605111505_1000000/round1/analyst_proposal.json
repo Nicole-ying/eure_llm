@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The policy has converged to a local optimum where it runs forward at a constant slow speed (forward_vel ~1.25) without improving speed or exploring diverse gaits, resulting in zero variance in episode length and state coverage collapse.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "new component: r_delta (velocity gradient bonus)",
+      "current_code": "(Not present)",
+      "new_code": "if not hasattr(self, '_prev_forward_vel'):\n    self._prev_forward_vel = obs[8]\nforward_vel = obs[8]\nr_delta = max(0, forward_vel - self._prev_forward_vel)  # reward only when speed increases\nself._prev_forward_vel = forward_vel",
+      "reason": "Encourages acceleration beyond the current plateau, breaking the local optimum by rewarding exploratory speed increases."
+    },
+    {
+      "component": "r_forward (scaling coefficient)",
+      "current_code": "r_forward = forward_vel  # no scaling",
+      "new_code": "r_forward = 1.5 * forward_vel  # increased pressure to achieve higher absolute speed",
+      "reason": "Stronger direct reward for high forward velocity increases the gradient toward faster gaits, complementary to the velocity gradient bonus."
+    }
+  ],
+  "predicted_effect": "The agent will start to accelerate beyond the current constant speed, leading to higher forward velocities over time, increased variance in episode metrics, and better state-space coverage (e.g., earlier termination if it falls at high speed, which would be informative).",
+  "max_risk": "The agent might learn to oscillate speed (alternately accelerate and decelerate) to collect gradient bonuses, or it might become unstable at high speeds and fall early, reducing episode length.",
+  "risk_mitigation": "Monitor forward_velocity variance and episode length in the next round. If episode length drops significantly while velocity variance stays high, consider adding a penalty for sudden deceleration or a minimum speed floor. The gradient bonus's max(0, *) already prevents rewarding oscillations because deceleration yields zero reward."
+}

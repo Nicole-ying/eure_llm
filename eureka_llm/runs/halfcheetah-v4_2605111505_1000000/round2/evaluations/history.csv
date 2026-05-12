@@ -1,0 +1,6 @@
+timesteps,mean_length,env_metrics
+200000,1000.0,"{""error"": {""mean"": NaN, ""std"": NaN}}"
+400000,1000.0,"{""error"": {""mean"": NaN, ""std"": NaN}}"
+600000,1000.0,"{""error"": {""mean"": NaN, ""std"": NaN}}"
+800000,1000.0,"{""error"": {""mean"": NaN, ""std"": NaN}}"
+1000000,1000.0,"{""error"": {""mean"": NaN, ""std"": NaN}}"

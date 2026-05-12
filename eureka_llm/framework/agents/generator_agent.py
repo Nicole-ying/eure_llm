@@ -43,6 +43,10 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
     if reward_path.exists():
         current_reward = reward_path.read_text("utf-8")
 
+    # Load prompt compaction policy
+    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "generator")
+    stats = {}
+
     # Load task manifest
     task_manifest = memory_system.get_task_manifest()
     if task_manifest:
@@ -168,7 +172,7 @@ def run_generator_agent(run_dir: Path, proposal: dict,
 
     for attempt in range(max_retries + 1):
         print(f"  LLM call attempt {attempt + 1}/{max_retries + 1} ...")
-        response = call_llm(prompt, api_key, model, temperature, timeout=300.0)
+        response = call_llm(prompt, api_key, model, temperature, timeout=600.0)
         all_responses.append(response)
 
         # Extract code
@@ -233,5 +237,3 @@ CRITICAL:
 - No Box2D object storage
 - All imports inside functions
 """
-    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "generator")
-    stats = {}

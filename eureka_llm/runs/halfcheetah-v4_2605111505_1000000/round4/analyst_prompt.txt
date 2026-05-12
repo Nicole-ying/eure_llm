@@ -1,0 +1,414 @@
+You are the **Analyst Agent** — the core reasoning engine of a multi-agent reward function design system.
+
+You receive:
+1. **Perception Report** — structured observations about the latest training run
+2. **Current Reward Function** — the code that was just trained
+3. **Task Manifest** — environment description, termination conditions, success criteria
+4. **Cross-Round Memory** — causal lessons from previous iterations
+5. **Recent Round History** — summaries of the last 3 rounds
+
+## Your tools
+
+You have access to these tools. When you want to use one, output:
+
+tool_name: tool_input
+
+### Tool 1: query_memory
+Search cross-round memory for relevant lessons.
+Input: a keyword or question
+Output: matching lessons
+
+### Tool 2: calculate_reward_budget
+Estimate whether the current reward function (or a proposed change) would produce positive net reward for the current agent behavior.
+Input: specific coefficient changes to evaluate
+Output: net reward estimate per step
+
+### Tool 3: compare_rounds
+Compare two specific rounds.
+Input: round numbers X and Y
+Output: summary of differences
+
+### Tool 4: analyze_efficiency
+Analyze action-efficiency coupling from behavior metrics and component stats.
+Input: optional note/question
+Output: efficiency indicators and likely inefficiency pattern
+
+### Tool 5: detect_principle_violation
+Detect possible violations of general reward-design principles from current signals.
+Input: optional note/question
+Output: matched principle violations (alignment, inefficiency, exploration collapse, etc.)
+
+### Tool 6: ask_perception
+Request a targeted follow-up observation from Perception Agent (asynchronous clarification).
+Input: a specific question about metrics/patterns/constraints
+Output: focused perception-side evidence
+
+## Your workflow
+
+You must use a **Thought → Action → Observation → Thought** loop.
+
+Step by step:
+1. **Thought**: Analyze the perception report. What is the key problem?
+2. **Action**: Use a tool to gather more information
+3. **Observation**: What did the tool return?
+4. **Thought**: Interpret the observation. Form a hypothesis.
+5. **Action or Final Answer**: Either gather more info or output your final proposal
+
+## Output format
+
+After your analysis loop, produce a **structured JSON proposal**:
+
+{
+    "diagnosis": "One-sentence summary of the root cause",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
+    "changed_count": <number of changes, max 3>,
+    "proposed_changes": [
+        {
+            "component": "component_name",
+            "current_code": "current line of code",
+            "new_code": "proposed new line of code",
+            "reason": "Why this change fixes the problem"
+        }
+    ],
+    "predicted_effect": "What behavior change do you expect?",
+    "max_risk": "What could go wrong with this change?",
+    "risk_mitigation": "How would we detect or recover from failure?"
+}
+
+## Constraints
+
+- **changed_count ≤ 3**: You can only change at most 3 distinct coefficients or structural elements per round.
+- **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
+- **Include reward budget**: For each change, explain why the net reward will remain positive.
+- **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
+- **Environment ID is always "UnknownEnv"**: Do not infer or mention specific benchmark names.
+- **Prefer principle-based diagnosis**: explicitly tie your diagnosis to at least one general principle (e.g., reward-goal alignment, action efficiency, exploration balance, state coverage, temporal consistency, termination exploitation).
+- **Use relative comparisons**: prefer shares, ratios, trends, and before/after deltas over fixed absolute thresholds whenever possible.
+- **Reference the Task Manifest**: When evaluating behavior, reference the Task Manifest's environment description. Does the behavior match the intended task goal? Flag any metric that deviates from the expected behavior pattern (e.g., body_height dropping, pitch_angle changing sign, abnormal gait indicators).
+
+
+---
+## Current Context
+
+### Current Round: 5
+### Previous Round Results: run_dir = round4
+
+### Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+## Task Goal
+Control a planar cheetah (6 joints: 2 legs × 3 joints each) to run forward as fast as possible along the x-axis. The cheetah should maintain an upright, forward-leaning posture with all four feet contacting the ground in a regular gait cycle.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action):
+    self._pre_step_state = {k: v for k, v in vars(self).items() if k.startswith("_") and k != "_pre_step_state"}
+    obs, _official_reward, terminated, truncated, info = self.base_env.step(action)
+    reward, components = self.compute_reward(obs, action, terminated, truncated, info)
+    info = dict(info or {})
+    info["reward_components"] = components
+    info["_pre_step_state"] = self._pre_step_state
+    return obs, reward, terminated, truncate
+
+### Perception Report
+### 1. Behavior Trend Summary
+- The policy consistently achieves the maximum episode length (1,000 steps) at every evaluation checkpoint (200k to 1M timesteps). The `error` metric is `nan`, indicating either no variance or the metric was not computed.
+- There is no observable improvement or regression in episode length across timesteps—the trajectory is **flat** with respect to this task-level metric. The agent is always allowed to run for the full horizon, meaning it never falls or fails early.
+- The most important task-level metric is `mean_length = 1000.0` at the final timestep (1,000,000). No other task metrics (e.g., speed, posture) are provided in the Evaluation Metrics table.
+### 2. Critical Metrics
+- **mean_length (1000.0)**: Critical because it confirms the agent never terminates episodes prematurely. This is a prerequisite for evaluating forward progress, but it does not capture speed or gait quality. A consistently high value (max possible) could indicate that the episode timeout is the only stopping condition, masking failures or unsafe behaviors.
+**Cross-metric pattern**:  
+The ratio `length_utilization_ratio = 1.0` and `mean_length_span_ratio = 0.0` show that every episode is exactly the same length (min = max = 1000). This extreme consistency suggests the policy is locked into a deterministic, repetitive cycle—no exploration of alternative episode durations.
+**No metric is moving in the wrong direction** because the metric is static.
+### 3. Reward Component Health
+- **Active components**:  
+  - `r_delta` (mean = 2.65), `r_explore` (mean = 0.14), `r_forward` (mean = 23.64), `r_smooth` (mean = -0.018). All have non-zero means and non-zero stds.
+- **Dominant component**:  
+  - `r_forward` (mean = 23.64, 89.4% of total) – its magnitude is ~9× larger than the next highest (`r_delta`). This component overwhelms all others.
+- **Negligible components**:  
+  - `r_smooth` has a very small negative mean (−0.018) – effectively negligible in magnitude but still active (std = 0.0033). `r_explore` (0.14) is also small relative to `r_forward`.
+- **Suspicious mean values**:  
+  - `r_forward` is persistently high and dominant across all evaluation milestones (no variation reported). This is expected for a forward-running task, but its extreme dominance raises the concern that the agent is optimizing exclusively for forward speed.
+- **Weak alignment**:  
+  - `r_forward` has high mean (23.64) but we have no independent measure of actual forward speed or gait quality. The high reward may be achieved with a cheap, repetitive motion (e.g., a galloping or bouncing gait) that maximizes velocity but violates the task intention of an upright, four-footed ground contact pattern.
+### 4. Behavioral Diagnosis (1-2 sentences)
+### 5. TDRQ Diagnosis
+### 6. Constraint Violations Summary
+- **State coverage (medium urgency)**: Episode lengths are concentrated at the maximum value (mean_length_min = mean_length_max = 1000.0). This indicates a narrow mode of behavior—the policy never experiences early termination or varied episode lengths, which is a sign of limited state-space exploration. The `length_utilization_ratio` of 1.0 confirms that all episodes are fully utilized, leaving no room for failures or alternative outcomes.
+- No other principles (e.g., reward shaping, entropy collapse) are flagged by the data.
+### 7. Episode Consistency Summary
+### 8. Key Numbers for Budget Calculation
+| Metric        | Value |
+|---------------|-------|
+| mean_length   | 1000.0 |
+| error         | nan   |
+
+### Current Reward Function
+```python
+"""LLM-generated reward function (round 4).
+Source: round4
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 3, modified per analyst proposal).
+Addresses exploration_balance and state_coverage by introducing an exponential
+forward-velocity reward and an explicit velocity-variance exploration bonus.
+Source: round3 (modified)
+"""
+
+import math
+import numpy as np
+import collections
+
+def compute_reward(self, obs, action, terminated, truncated, info):
+    """
+    Primary dynamics: forward propulsion via leg actuation.
+    The dominant physical process is the conversion of joint torques into horizontal movement
+    while maintaining balance on a flat plane. Since there is no gravity-induced failure,
+    the agent can stand still indefinitely, so the reward must actively drive forward motion.
+    The simplest learnable signal is the body's forward velocity, which directly reflects
+    task progress. A smoothness penalty prevents erratic movements that waste energy without
+    contributing to speed.
+    """
+    import numpy as np
+
+    # Initialize cross-step state if needed
+    if not hasattr(self, '_step_count'):
+        self._prev_action = np.zeros(6)   # first step: assume zero previous action
+        self._prev_forward_vel = 0.0      # first step: assume zero previous velocity
+        self._step_count = 0
+        self._vel_buffer = collections.deque(maxlen=200)  # stores recent velocities for exploration bonus
+    self._step_count += 1
+
+    # Extract forward velocity from observation.
+    # Based on typical HalfCheetah-v2 observation order (index 8 = x velocity).
+    # If actual environment differs, this line would be adjusted.
+    forward_vel = obs[8]  # shape: scalar
+
+    # Reward component 1: forward velocity (primary task signal)
+    # Changed from linear to exponential to create increasing gradient with speed,
+    # breaking the local optimum and strongly incentivizing exploration of higher velocities.
+    # weight 1.5: increased pressure to achieve higher absolute speed (per analyst proposal)
+    # Exponential base (math.exp(forward_vel) - 1.0) ensures reward stays >= 0, with gradient proportional to current velocity.
+    r_forward = 1.5 * (math.exp(forward_vel) - 1.0)
+
+    # Reward component 2: action smoothness penalty (encourage smooth, efficient actuation)
+    # Weight 0.001: reduced from 0.01 to reduce penalty magnitude, encouraging faster forward speed.
+    # The penalty is small enough not to dominate r_forward, but still discourages erratic jerks.
+    action_delta = action - self._prev_action
+    r_smooth = -0.001 * np.sum(action_delta ** 2)  # weight 0.001: avoids suppressing needed motion
+    self._prev_action = action.copy()  # store for next step
+
+    # Reward component 3: velocity gradient bonus (r_delta), per analyst proposal
+    # Changed from one-sided (increase-only) to two-sided (absolute difference) to encourage
+    # speed variation and exploration of different gaits (addresses exploration_balance state_coverage).
+    r_delta = abs(forward_vel - self._prev_forward_vel)
+    self._prev_forward_vel = forward_vel  # store for next step
+
+    # Reward component 4 (new): Exploration bonus based on velocity standard deviation over last 200 steps.
+    # Weight 0.1: provides a modest bonus (~0.01–0.05 per step) proportional to recent velocity variation,
+    # encouraging the agent to try different speeds directly addressing state_coverage.
+    self._vel_buffer.append(forward_vel)
+    if len(self._vel_buffer) == 200:
+        std_vel = np.std(list(self._vel_buffer))
+        r_explore = 0.1 * std_vel
+    else:
+        r_explore = 0.0
+
+    components = {
+        "r_forward": r_forward,
+        "r_smooth": r_smooth,
+        "r_delta": r_delta,
+        "r_explore": r_explore,
+    }
+    total = sum(components.values())
+
+    # Terminal outcome (for evaluation only) – not added to total reward
+    if terminated:
+        # No early termination possible (all episodes truncated), so outcome is neutral.
+        components["_outcome"] = 0.0
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of reward.
+    Collects key performance indicators for the HalfCheetah running task.
+    """
+    import numpy as np
+
+    # Safely access observation from env (assumes env has obs after step)
+    obs = getattr(env, 'obs', None)
+    if obs is None:
+        # Fallback: try env.base_env.obs (if wrapped)
+        base = getattr(env, 'base_env', None)
+        if base is not None:
+            obs = getattr(base, 'obs', None)
+        if obs is None:
+            return {"error": "observation unavailable"}
+
+    # Assume HalfCheetah observation indices (common for 17-dim version):
+    # 0: torso height, 8: x velocity, 10: torso angular velocity, 12-16: joint velocities (if needed)
+    forward_vel = obs[8] if len(obs) > 8 else 0.0
+    torso_ang_vel = obs[10] if len(obs) > 10 else 0.0
+
+    # Action magnitude (mean absolute torque)
+    action_mag = float(np.mean(np.abs(action)))
+
+    # Action smoothness (mean absolute change from previous action)
+    # Use stored previous action from env if available
+    prev_action = getattr(env, '_prev_action', np.zeros_like(action))
+    action_delta = action - prev_action
+    action_smoothness = float(np.mean(np.abs(action_delta)))
+
+    # Approximate forward power (velocity * action magnitude) – not a reward, but useful metric
+    forward_power = forward_vel * action_mag if abs(forward_vel) > 0.01 else 0.0
+
+    # Additional metric: acceleration (derived from stored previous velocity)
+    prev_vel = getattr(env, '_prev_forward_vel', None)
+    if prev_vel is not None:
+        acceleration = float(forward_vel - prev_vel)
+    else:
+        acceleration = 0.0
+
+    return {
+        "forward_velocity": float(forward_vel),
+        "torso_angular_velocity": float(torso_ang_vel),
+        "action_magnitude": action_mag,
+        "action_smoothness": action_smoothness,
+        "forward_power": forward_power,
+        "acceleration": acceleration,
+    }
+
+
+```
+
+### Previous Round's Proposal (what we predicted)
+```json
+{
+  "diagnosis": "Exploration collapse: the policy is stuck in a deterministic high-speed gait that maximizes the dominant forward reward (89.4% of total) while the exploration bonus (weight 0.1) is too weak to induce behavioral variation. The absence of any noise mechanism prevents genuine state-space exploration, so the policy trivially satisfies the velocity-variance bonus with a fixed periodic oscillation.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_explore weight",
+      "current_code": "r_explore = 0.1 * std_vel",
+      "new_code": "r_explore = 1.0 * std_vel",
+      "reason": "Increasing the exploration bonus weight from 0.1 to 1.0 makes it comparable to the forward reward (~23.64) when velocity variance is moderate (e.g., std_vel ~15 yields r_explore=15). This provides a strong, direct incentive for the agent to try different speeds and gaits, directly addressing exploration balance and state coverage. The net reward remains positive because the bonus scales with actual variance, and any increase in variance is rewarded proportionally."
+    },
+    {
+      "component": "action noise injection",
+      "current_code": "No action noise present",
+      "new_code": "At the beginning of compute_reward, after receiving `action`, add: action = action + np.random.normal(0, 0.1, size=6). This modifies the action before it is used for the smoothness penalty and environment step.",
+      "reason": "Adding Gaussian action noise (σ=0.1) forces stochastic exploration by perturbing the policy's outputs. This breaks the deterministic periodic attractor, enabling the exploration bonus to actually detect and reward novel velocity states. Without noise, the policy can trivially satisfy the std bonus by maintaining a fixed oscillation. Noise ensures genuine state-space coverage and aligns with the memory's recommendation from round 4."
+    }
+  ],
+  "predicted_effect": "The agent will initially show increased velocity variance and slightly lower forward speed due to noise, but over training the exploration bonus will drive it to discover higher-speed gaits or more efficient patterns. Episode length may occasionally drop below 1000 if the noise causes instability, but that is a sign of healthy exploration. Eventually, forward speed should surpass the previous plateau.",
+  "max_risk": "Action noise may cause the agent to waste energy or adopt highly erratic movements, reducing immediate forward reward and potentially leading to a temporary reward collapse (if forward speed drops significantly and exploration bonus does not compensate quickly). The increased exploration weight might cause the agent to prioritize variance over absolute speed, resulting in a speed-reward tradeoff.",
+  "risk_mitigation": "Monitor forward_velocity mean and std, action_magnitude, and total reward per step. If forward velocity drops by more than 30% after 100k timesteps, reduce noise σ to 0.05 or add an annealing schedule. Also track episode length – if it becomes highly variable (>200 steps variation), it's a positive sign; if it drops below 500 on average, the noise may be too high. If forward velocity remains below baseline after 300k steps, reduce r_explore weight to 0.5."
+}
+```
+
+### Recent Round History
+### Round 3
+Reward: """LLM-generated reward function (round 3). """ """LLM-generated reward function (round 2, modified per analyst proposal). """     """
+Metrics: completion=?, fall=?, mean_len=1000.0
+Perception: ## 1. Behavior Trend Summary **Trend:** The trajectory is **flat from the first checkpoint onward** — no improvement or regression occurs after 200k timesteps. The policy reached a ceiling (max episod
+Lesson: ## Round 4 Reflection  ### Expected
+
+### Round 4
+Reward: """LLM-generated reward function (round 4). """ """LLM-generated reward function (round 3, modified per analyst proposal). """     """
+Metrics: completion=?, fall=?, mean_len=1000.0
+Perception: ### 1. Behavior Trend Summary - **mean_length (1000.0)**: Critical because it confirms the agent never terminates episodes prematurely. This is a prerequisite for evaluating forward progress, but it d
+Lesson: ## Round 5 Reflection  ### Expected
+
+### Round 5
+
+### Cross-Round Lessons (MEMORY.md)
+# Reward Design Memory
+Cross-round causal lessons from reward function iteration. Each line is a single
+compressed lesson: what changed → what happened → why → recommendation.
+**Round 1**: Reducing `r_smooth` weight had zero effect because the agent already ignored smoothness (near-zero reward) — the real root cause was a deterministic policy lacking state coverage and exploration. | Why: analyst misidentified the bottleneck as reward weighting when the actual issue is behavioral collapse (no variance in episode length or forward speed). | Fix: Introduce an exploration bonus (e.g., entropy regularization, speed gradient reward, or random action injection) to break the local optimum.
+**Round 2**: Adding velocity gradient and increasing forward reward did not break the local optimum — the agent maintained constant episode length and stable gait, because the environment has no early termination (fixed horizon) so the policy can safely satisfy the new reward without exploring riskier states. | Why: The root cause is not reward weighting but the absence of any termination condition that would force adaptation; the policy simply optimizes within its existing attractor. | Fix: First verify environment termination conditions; if none exist, add explicit exploration mechanisms (e.g., entropy regularization, action noise schedule, or state visitation bonus) rather than reward reweighting alone.
+**Round 3**: Changing r_delta to absolute difference did not induce speed variation — the policy maintained a fixed periodic gait because the reward can be satisfied by constant periodic oscillation without exploring new speeds. | Why: The root cause is the absence of any mechanism (e.g., entropy, noise, termination) that forces behavioral diversity; reward shaping alone cannot break a local optimum if the policy can trivially satisfy the new term within its existing attractor. | Fix: Introduce explicit exploration bonuses (action noise, entropy regularization, or state visitation count) and monitor forward velocity variance directly (not just episode length) to detect subtle speed changes.
+**Round 4**: Exponential forward reward increased speed but did not induce falls or variation — velocity-variance exploration bonus (weight 0.1) was too weak relative to dominant forward reward, so policy maintained a repetitive high-speed gait. | Why: The exploration bonus (std of velocity buffer) can be trivially satisfied by any periodic output without true state-space coverage; its small weight is overpowered by the strong exponential gradient. | Fix: Increase exploration weight to ≥0.5 and add action noise (Gaussian σ=0.1) or entropy regularization to force stochastic exploration; monitor velocity variance directly.
+
+### Analyst Persistent Belief State
+```json
+{
+  "recent": [
+    {
+      "round": 1,
+      "diagnosis": "{\"coefficient changes\": {\"r_smooth_weight\": {\"current\": 0.01, \"proposed\": 0.001}}}\n\n**Observation:**\nNet reward estimate per step: Current r_forward mean ~1.3, r_smooth mean ~ -0.09. With weight reduced to 0.001, r_smooth would be ~ -0.009 (assuming similar action_delta). The total reward would incr",
+      "violated_principle": "none",
+      "changed_count": 0
+    },
+    {
+      "round": 2,
+      "diagnosis": "The policy has converged to a local optimum where it runs forward at a constant slow speed (forward_vel ~1.25) without improving speed or exploring diverse gaits, resulting in zero variance in episode length and state coverage collapse.",
+      "violated_principle": "exploration_balance | state_coverage",
+      "changed_count": 2
+    },
+    {
+      "round": 3,
+      "diagnosis": "The policy is stuck in a deterministic, low-variance gait with constant forward speed and zero episode length variation, due to exploration collapse in the absence of termination conditions.",
+      "violated_principle": "exploration_balance | state_coverage",
+      "changed_count": 1
+    },
+    {
+      "round": 4,
+      "diagnosis": "The policy is stuck in a local optimum with low forward velocity (~1.2) and zero variance across episodes because the linear forward reward does not incentivize breaking into higher-speed regimes and no exploration mechanism is present.",
+      "violated_principle": "exploration_balance | state_coverage",
+      "changed_count": 2
+    },
+    {
+      "round": 5,
+      "diagnosis": "Exploration collapse: the policy is stuck in a deterministic high-speed gait that maximizes the dominant forward reward (89.4% of total) while the exploration bonus (weight 0.1) is too weak to induce behavioral variation. The absence of any noise mechanism prevents genuine state-space exploration, s",
+      "violated_principle": "exploration_balance | state_coverage",
+      "changed_count": 2
+    }
+  ]
+}
+```
+
+---
+## Begin Your Analysis
+
+Use the Thought → Action → Observation loop.
+
+**Thought:** What is happening? What is the key problem?
+**Action:** query_memory | calculate_reward_budget | compare_rounds | analyze_efficiency | detect_principle_violation | ask_perception
+**Observation:** Tool output
+
+When you have enough information, output your FINAL ANSWER as a JSON proposal:
+
+```json
+{
+    "diagnosis": "...",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
+    "changed_count": <1-3>,
+    "proposed_changes": [...],
+    "predicted_effect": "...",
+    "max_risk": "...",
+    "risk_mitigation": "..."
+}
+```
+
+CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
+metrics_fn MUST be present in the generated code.

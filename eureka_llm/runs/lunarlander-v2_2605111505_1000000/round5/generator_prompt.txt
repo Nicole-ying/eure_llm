@@ -1,0 +1,343 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- If `violated_principle` is present, ensure code modifications explicitly address that principle.
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- **Find attributes from step() source**: Look at the step() source code from the Task Manifest. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. Do NOT guess attribute names not seen there.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let a single failed lookup crash the whole function.
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+When resolving conflicts, prioritize principle-consistent behavior over ad-hoc coefficient patching.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 4).
+Source: round4
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 3).
+Source: round3
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 2).
+Adapted from round1 per analyst proposal with scaling adjustments.
+Addresses violated principle: reward_goal_alignment.
+"""
+
+import math
+import numpy as np
+
+
+def compute_reward(self, state, m_power, s_power, terminated):
+    """
+    State-based reward with strong horizontal shaping, height‑dependent alive bonus,
+    reduced crash penalty, and scaled components to stay within 5× magnitude.
+
+    Dynamics: Gravity constantly pulls the lander down. The agent must fire
+    the main engine to slow descent while staying upright and centered.
+    The primary task is to reach the pad with both legs touching, low speed,
+    and near‑zero angle. The reward is designed to be learnable from dense
+    feedback without penalising gentle descent (vy dead zone).
+    """
+    # --- weights (adjusted per analyst proposal for horizontal shaping) ---
+    w_x = 0.3       # horizontal distance penalty weight (tripled from 0.1 to create stronger centering gradient; -3.08 at dist=10.26, still survivable)
+    w_angle = 0.004  # angle penalty weight (# typical |angle| ≤ 0.2 → max penalty ~0.0008)
+    w_vy = 0.005     # vertical velocity penalty weight after dead‑zone (# typical high |vy| ~6 → penalty ~0.0275)
+    w_vx = 0.005     # horizontal velocity penalty weight (# typical |vx| ≤ 1.5 → max penalty ~0.0075)
+
+    # 1. Stability shaping (negative penalty for deviation from ideal state)
+    # Apply dead zone to vertical velocity: only penalize |vy| > 0.5
+    vy_penalty = max(0, abs(state[3]) - 0.5)  # no penalty for gentle descent
+    r_stability = -(
+        w_x * abs(state[0]) +
+        w_angle * abs(state[4]) +
+        w_vy * vy_penalty +
+        w_vx * abs(state[2])
+    )
+
+    # 2. Pad proximity reward (encourages moving toward the pad horizontally)
+    dist_x = abs(state[0])
+    r_proximity = 0.2 * max(0, 1.0 - dist_x)   # increased multiplier for scaling; max +0.2 when centered
+
+    # 3. Leg contact bonus – only when near the pad (dist_x < 1.5)
+    leg_contacts = (1.0 if state[6] > 0.5 else 0.0) + (1.0 if state[7] > 0.5 else 0.0)
+    if dist_x < 1.5:
+        r_legs = 0.1 * leg_contacts   # increased multiplier for scaling; max +0.2 when both legs touch
+    else:
+        r_legs = 0.0                  # no bonus if far from pad
+
+    # 4. Height‑dependent alive bonus (strongly incentivises descent below 15 units)
+    # Modified to only apply when the lander is within 5 units of pad center (analyst proposal)
+    r_alive = 0.5 * max(0, 1.0 - state[1] / 15.0) * (1.0 if abs(state[0]) < 5.0 else 0.0)  # alive bonus only within 5 units of pad center to prevent off-pad descent
+
+    # --- Build per-step components (no terminal outcome yet) ---
+    components = {
+        "r_stability": r_stability,
+        "r_proximity": r_proximity,
+        "r_legs": r_legs,
+        "r_alive": r_alive,
+    }
+
+    # Total before terminal outcome (sum of all dense components)
+    total = r_stability + r_proximity + r_legs + r_alive
+
+    # --- Terminal outcome handling ---
+    if terminated:
+        # Determine success (same criteria as before)
+        on_ground = (state[6] > 0.5 and state[7] > 0.5)
+        angle_ok = abs(state[4]) < 0.15
+        vert_vel_ok = abs(state[3]) < 0.2
+        horiz_vel_ok = abs(state[2]) < 0.2
+        centered = abs(state[0]) < 0.3
+        success = on_ground and angle_ok and vert_vel_ok and horiz_vel_ok and centered
+
+        if success:
+            # Dense success bonus (part of total reward – not _outcome)
+            components["r_landing_bonus"] = 20.0  # large enough to dominate after landing
+            total += 20.0
+            # _outcome is for evaluation only, NOT added to total
+            components["_outcome"] = 1.0
+        else:
+            # Crash penalty (increased from -1.0 to -2.0 per analyst proposal)
+            components["r_crash_penalty"] = -2.0
+            total += -2.0
+            components["_outcome"] = -1.0
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task performance metrics (reward‑agnostic).
+    Uses only environment attributes and episode length.
+    All accesses are safe (getattr with fallback).
+    """
+    # Safely access environment attributes
+    lander = getattr(env, 'lander', None)
+    legs = getattr(env, 'legs', None)
+    helipad_y = getattr(env, 'helipad_y', 0.0)
+
+    # Default values if attributes missing
+    x = 0.0
+    y = 0.0
+    vx = 0.0
+    vy = 0.0
+    angle = 0.0
+    leg_contact_left = 0.0
+    leg_contact_right = 0.0
+
+    if lander is not None:
+        pos = lander.position
+        vel = lander.linearVelocity
+        x = pos.x
+        y = pos.y
+        vx = vel.x
+        vy = vel.y
+        angle = lander.angle
+
+    if legs is not None and len(legs) >= 2:
+        leg_contact_left = 1.0 if legs[0].ground_contact else 0.0
+        leg_contact_right = 1.0 if legs[1].ground_contact else 0.0
+
+    # Episode progress (steps survived / max steps 1000)
+    step_count = getattr(env, '_elapsed_steps', 0)
+
+    # Compute metrics
+    metrics = {
+        # Horizontal distance to pad centre (raw world coordinates)
+        "dist_to_pad": abs(x),
+        # Height above ground (raw world coord)
+        "height": y - helipad_y,
+        # Absolute angle (radians)
+        "angle_abs": abs(angle),
+        # Vertical speed magnitude (world coord)
+        "vert_speed_abs": abs(vy),
+        # Number of legs in ground contact
+        "legs_ground": int(leg_contact_left + leg_contact_right),
+        # Fraction of episode completed (survival)
+        "survival_fraction": min(step_count / 1000.0, 1.0),
+    }
+
+    return metrics
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The per-step reward is dominated by a constant +20 landing bonus (mean=20.0, std=0.0, 84.6% of total) that is applied unconditionally each step, making dense shaping irrelevant and eliminating any incentive for horizontal progress.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "terminal reward handling",
+      "current_code": "if success:\n    components['r_landing_bonus'] = 20.0\n    total += 20.0\n    components['_outcome'] = 1.0\nelse:\n    components['r_crash_penalty'] = -2.0\n    total += -2.0\n    components['_outcome'] = -1.0",
+      "new_code": "if success:\n    components['r_landing_bonus'] = 20.0\n    total += 20.0\n    components['_outcome'] = 1.0\nelse:\n    components['r_crash_penalty'] = -2.0\n    total += -2.0\n    components['_outcome'] = -1.0\n\n# Additional safety: Ensure r_landing_bonus is NEVER added outside this block.\n# Currently the code only adds it here, but metrics show it was applied per-step.\n# After modification, run a sanity check that total equals sum of dense components before termination.",
+      "reason": "Explicitly enforce that the landing bonus is only added on successful termination. The current execution apparently added it every step; this change ensures the code matches the intended design. No structural change to the terminal block itself, but we rely on the fact that termination only happens once per episode. The other changes below will make the dense shaping strong enough to drive behavior."
+    },
+    {
+      "component": "alive bonus conditioning",
+      "current_code": "r_alive = 0.5 * max(0, 1.0 - state[1] / 15.0) * (1.0 if abs(state[0]) < 5.0 else 0.0)",
+      "new_code": "r_alive = 0.5 * max(0, 1.0 - state[1] / 15.0)",
+      "reason": "Remove the distance gate so the agent receives a small positive alive bonus (up to 0.5) when low, even if far from the pad. This prevents early termination exploitation (i.e., crashing to escape negative reward) while still keeping the net reward negative when far from pad because the horizontal penalty dominates. At the current state (height=2.46, dist=9.86), alive bonus would be ~0.418, horizontal penalty ~ -0.5*9.86 = -4.93, net ~ -4.51 per step. This strong negative gradient will push the agent toward the pad."
+    },
+    {
+      "component": "horizontal distance penalty weight",
+      "current_code": "w_x = 0.3",
+      "new_code": "w_x = 0.5",
+      "reason": "Increase from 0.3 to 0.5 to create a stronger per-step penalty for being far from the pad. At dist=9.86, the penalty goes from -2.96 to -4.93, making it clearly more costly to stay outside. This is necessary because previous weaker coefficients (0.1, 0.3) failed to overcome the residual positive reward from alive bonus and other shaping. The new gradient will incentivize lateral thrust actions immediately."
+    }
+  ],
+  "predicted_effect": "With the constant +20 bonus removed (only terminal now), the per-step dense reward will be dominated by the horizontal distance penalty (~ -4.93 at dist=10) and a small alive bonus (~0.4 at low height). The net reward at typical hovering state will be around -4.5 per step, strongly negative, forcing the agent to reduce horizontal offset. As the agent moves toward the pad, the penalty reduces, and once within dist<1.5, leg contact bonuses and proximity reward provide positive reinforcement (max ~0.2+0.2=0.4). Eventually, successful landings yield a one-time +20 bonus. The agent should begin reducing dist_to_pad within 200k steps and achieve non-zero survival fraction.",
+  "max_risk": "Removing the alive bonus gate may cause the agent to hover at low height indefinitely far from pad, still collecting a small positive alive bonus (0.5 at height 0) while paying -4.93 penalty, net -4.43 per step. That is still negative, so the agent will still need to move. However, if the agent learns to quickly crash (resetting episode) to avoid the large negative penalty, it might exploit early termination. But the alive bonus is still positive while descending, so crashing early means losing future alive bonus; the net should still favor staying alive and moving laterally. A more serious risk is that the agent might learn to oscillate or use lateral thrust inefficiently, increasing fuel consumption. That can be monitored via action magnitude.",
+  "risk_mitigation": "Critic: Proposal changes too many items; risk of unstable credit assignment.; High-severity principle violation present: reward_goal_alignment; High-severity principle violation present: reward_goal_alignment"
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+## Environment Description
+## Task Goal
+## Termination Analysis
+See step() source for termination conditions.
+## Observation Space
+See step() source for observation structure.
+## Action Space
+## Step Source Code
+    # Update wind and apply to the lander
+                * self.wind_power
+    # Apply Engine Impulses
+    # Tip is a the (X and Y) components of the rotation of the lander.
+    # Side is the (-Y and X) components of the rotation of the lander.
+    # Generate two random numbers between -1/SCALE and 1/SCALE.
+        # Main engine
+                -tip[1] * (MAIN_ENGINE_Y_LOCATION / SCALE + 2 * dispersion[0])
+                - side[1] * dispersion[1]
+        # Orientation/Side engines
+    # ============================================================
+    # LLM generates this function
+    # metrics_fn can read env._pre_step_state for cross-step values
+    # ============================================================
+
+## Perception Report (for context)
+## 1. Behavior Trend Summary
+- **200k timesteps:** Episodes average 470 steps before termination. The lander is high (height ~61), descending fast (vertical speed ~11), far from pad (~8.2), and never contacts the ground. It crashes early.
+- **400k–600k:** Episode length reaches the maximum (1000). Height drops to ~15, vertical speed falls below 1, and the lander stabilizes at a low altitude with no ground contact. Angle remains well-controlled (~0.05 rad). Horizontal offset stays around 9–10 units.
+- **800k:** Height further decreases to ~4.85, vertical speed ~0.38, still no ground contact. The agent hovers just above the terrain.
+- **1M:** Height is now ~2.46, legs contact ground 43% of steps, vertical speed ~0.57. However, horizontal distance to pad remains ~9.86, and **survival fraction is 0%** – no episode results in a successful landing.
+**Trend:** The agent has learned to descend gently and maintain stability, but it makes **no progress on horizontal positioning**. Performance plateaus: vertical control improves, but the task goal (landing on the pad) is never achieved.
+**Key numbers at final timestep (1M):**  
+`mean_length=1000, angle_abs=0.039, dist_to_pad=9.86, height=2.46, legs_ground=0.43, vert_speed_abs=0.575, survival_fraction=0.0`
+---
+## 2. Critical Metrics
+| Metric | Value (1M) | Why Important |
+|--------|------------|---------------|
+| **dist_to_pad** | 9.86 | Directly measures task progress. The agent must land on the pad, yet this metric stays constant (~10) across all evaluations. **Moving in the wrong direction** – no improvement. |
+| **vert_speed_abs** | 0.575 | Key for safe touchdown. If lander contacts ground too fast it crashes. The value is low enough for a gentle landing, but horizontal offset prevents successful use of this control. |
+| **legs_ground** | 0.43 | Indicates ground contact. At 1M, legs touch ground on average 43% of steps, implying the lander is partially resting or bouncing on terrain. Combined with survival_fraction=0, it suggests contact occurs **off the pad**, likely causing crashes (or the reward structure does not penalize off‑pad contact). |
+**Cross‑metric pattern:** `dist_to_pad` remains near 10 while `height` drops to near 0. This shows the agent descends **vertically down** without lateral movement. It never corrects its horizontal position.
+**Wrong‑direction flag:** `dist_to_pad` – no reduction; `survival_fraction` – stuck at 0.
+---
+## 3. Reward Component Health
+- **Active (mean significantly non‑zero):**  
+- **Dominant:**  
+  `r_landing_bonus` (mean = 20.0, std = 0.0) accounts for **84.6%** of total reward magnitude – far above all others.
+- **Inactive / negligible:**  
+  `r_legs` (mean = 0.008, std = 0.017) – near zero, effectively unused.
+- **Suspicious values:**  
+  Both `r_landing_bonus` and `r_crash_penalty` have **zero variance** (std = 0). They are constant offsets applied every step, not contingent on actual landing or crashing. This makes them trivial to collect, and they dominate the reward signal.
+- **High mean but weak alignment with progress:**  
+---
+## 4. Behavioral Diagnosis
+---
+## 5. TDRQ Diagnosis
+---
+## 6. Constraint Violations Summary
+| Principle | Severity | Evidence |
+|-----------|----------|----------|
+| **reward_goal_alignment** | **High** | Two components (`r_crash_penalty`, `r_landing_bonus`) have constant means and zero variance – they provide no informative learning signal and can be harvested without achieving the goal. |
+| **temporal_consistency** | **Medium** | `legs_ground` shifted from 0.0 early to 0.1435 late (relative drift >143k), indicating a major behavioral change over training. |
+| **termination_exploitation** | **Medium** | Average episode length (478) is only 24% of the observed max (1970), suggesting the agent may be leveraging early episode termination to avoid penalties, though evaluation episodes run full length. |
+---
+## 7. Episode Consistency Summary
+---
+## 8. Key Numbers for Budget Calculation
+| Metric | Value |
+|--------|-------|
+| mean_length | 1000 |
+| angle_abs | 0.039401 |
+| dist_to_pad | 9.860401 |
+| height | 2.46064 |
+| legs_ground | 0.4304 |
+| survival_fraction | 0.0 |
+| vert_speed_abs | 0.574855 |
+
+## Environment Constraints
+- **Gravity detected**: Zero-action episodes terminate quickly (>50% die within 20% of episode limit). The agent MUST act to stay alive. Do NOT penalize the main control actions (motors, thrusters, torque) — the agent needs them to counteract gravity. Reward staying alive but not at the cost of task progress.
+- **Balance/angle dims** (obs dims [4], range ≈ \u00b1\u03c0): These are angular coordinates. Use smallest signed angular difference (not raw subtraction) for distance calculations. If the task requires maintaining a specific posture, include an angular stability reward component.
+- **High failure rate under random actions** (100%): The task has strong failure conditions. Termination penalty should be < 100x expected per-step reward to avoid pathological risk-aversion.

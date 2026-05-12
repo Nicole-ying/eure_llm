@@ -1,0 +1,23 @@
+{
+  "diagnosis": "Agent is stuck applying maximum force with negligible velocity because the reward function provides a constant positive baseline (r_position ≈ 0.39 + constant r_goal) that masks any incentive to move, leading to reward hacking and no task progress.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_progress",
+      "current_code": "r_position = (position - (-1.2)) / 1.8\nr_velocity = 0.2 * abs(velocity)\nr_progress = r_position + r_velocity",
+      "new_code": "r_velocity = 0.5 * abs(velocity)\naction_penalty = -0.01 * abs(action[0])\nr_progress = r_velocity + action_penalty",
+      "reason": "Removes the constant positional baseline that provided ~0.39 reward regardless of movement, replacing it with a stronger velocity incentive (coefficient increased from 0.2 to 0.5) and a small action penalty to discourage wasteful full-throttle stalls. This directly incentivizes building momentum and penalizes standing still."
+    },
+    {
+      "component": "r_goal component logging",
+      "current_code": "components[\"r_goal\"] = 1.0  # only set inside success branch\n# not set elsewhere",
+      "new_code": "components[\"r_goal\"] = 1.0 if success else 0.0  # always set; 0.0 when not achieved",
+      "reason": "Ensures the r_goal component is always present in the dictionary (prevents missing-key issues) and remains 0.0 when the goal is not reached. Combined with the change above, there is no constant reward offset; the agent only gets the terminal bonus upon success."
+    }
+  ],
+  "predicted_effect": "The agent will learn to move (not stall) because velocity now yields significant reward, while full throttle without speed gain incurs a penalty. It should begin oscillating left and right to build momentum, eventually reaching the goal. The constant baseline is eliminated, so the only positive rewards come from actual movement and successful termination.",
+  "max_risk": "Without any positional guidance, the agent might learn to oscillate quickly in place (e.g., left and right at the bottom) to collect velocity reward without progressing toward the goal. This could result in high velocity but no decrease in dist_to_goal.",
+  "risk_mitigation": "Monitor the 'dist_to_goal' metric closely. If it remains high while velocity_mag increases, consider adding a small progress bonus based on the derivative of distance to goal in the next round (e.g., +0.1 * (previous_dist - current_dist)). Additionally, track heading changes to ensure the agent is actually reversing direction."
+}

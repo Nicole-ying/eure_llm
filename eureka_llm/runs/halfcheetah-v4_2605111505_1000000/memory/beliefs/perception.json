@@ -1,0 +1,95 @@
+{
+  "agent": "perception",
+  "version": 2,
+  "history": [
+    {
+      "round": "round0",
+      "behavior_summary": "### 1. Behavior Trend Summary\n\nAt each evaluation milestone (200K to 1M timesteps), the policy consistently achieves **mean_length = 1000.0** with no error metric available. This indicates the cheetah **survives every episode to the maximum horizon** (1,000 steps) from early in training onward. Ther",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious near-zero:** Neither component is near zero.",
+        "No other constraints are flagged."
+      ]
+    },
+    {
+      "round": "round1",
+      "behavior_summary": "## Training Observation Report\n\n### 1. Behavior Trend Summary\n\nAt every evaluation milestone (200k, 400k, 600k, 800k, 1M steps), the policy consistently achieves the maximum episode length of 1000.0 steps. There is no variation across evaluations: the `mean_length` is flat at 1000.0, and the error m",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious behavior**: `r_smooth` is persistently near zero across evaluations (no data on per-evaluation breakdown, b"
+      ]
+    },
+    {
+      "round": "round1",
+      "behavior_summary": "### 1. Behavior Trend Summary\n- At each evaluation milestone, the episode length (`mean_length`) remains constant at 1000.0 steps across all checkpoints (200k, 400k, 600k, 800k, 1M timesteps). No improvement or regression in episode duration is observed.\n- The policy consistently generates episodes ",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious means:** `r_smooth` is persistently near zero across all evaluations, indicating it provides no meaningful "
+      ]
+    },
+    {
+      "round": "round2",
+      "behavior_summary": "# Perception Report: Planar Cheetah Forward Running Policy\n\n## 1. Behavior Trend Summary\n\n- **What the policy is doing:** At every evaluation milestone (200k–1M timesteps), the policy consistently achieves the maximum episode length of 1000 steps without termination. This indicates the cheetah never",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Flagged metric:** None is moving in the wrong direction, but the **lack of variation** (mean_length_span_ratio = 0.0) ",
+        "**Suspicious near-zero across evaluations:** Not applicable – all means are stable across evaluations (no per-evaluation"
+      ]
+    },
+    {
+      "round": "round3",
+      "behavior_summary": "# Perception Agent Report\n\n## 1. Behavior Trend Summary\n\nAt each evaluation milestone (200k, 400k, 600k, 800k, 1M timesteps), the policy consistently produces episodes of **mean_length = 1000.0** with **error = nan** (no error metric available). The trajectory is **flat** — no improvement or regress",
+      "key_metrics": {
+        "mean_length": 1000.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**mean_length (1000.0)** – This metric reflects episode duration. A constant maximum value indicates the agent never fal",
+        "**Suspicious mean values:** The mean of r_delta (2.70) is persistently non-zero across evaluations, yet there is no corr",
+        "*Weak alignment warning:** r_delta’s high mean is not accompanied by any variability in episode length or other performa"
+      ]
+    },
+    {
+      "round": "round4",
+      "behavior_summary": "### 1. Behavior Trend Summary\n\n- The policy consistently achieves the maximum episode length (1,000 steps) at every evaluation checkpoint (200k to 1M timesteps). The `error` metric is `nan`, indicating either no variance or the metric was not computed.\n- There is no observable improvement or regress",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious mean values**:",
+        "No other principles (e.g., reward shaping, entropy collapse) are flagged by the data."
+      ]
+    },
+    {
+      "round": "round5",
+      "behavior_summary": "### 1. Behavior Trend Summary\n\n- **Policy behavior across checkpoints:** The agent’s performance is completely flat across all evaluation points (200k, 400k, 600k, 800k, 1M timesteps). Mean episode length is always 1000.0, and the error metric is NaN (not collected). There is no observed improvement",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious near-zero values:** None of the component means are persistently near-zero across evaluation (only one eval"
+      ]
+    }
+  ],
+  "trends": {
+    "mean_length_trend": {
+      "start": 1000.0,
+      "end": 1000.0,
+      "direction": "stable",
+      "values": [
+        1000.0
+      ]
+    }
+  },
+  "dynamics_profile": "",
+  "cross_round_insights": "Episode length stable (1000 → 1000)"
+}

@@ -1,0 +1,122 @@
+{
+  "agent": "perception",
+  "version": 2,
+  "history": [
+    {
+      "round": "round0",
+      "behavior_summary": "# Perception Report: Lunar Lander Training Analysis\n\n## 1. Behavior Trend Summary\n\nAt each evaluation milestone, the policy consistently keeps the lander aloft for about 67–72 steps before termination. The agent maintains a small absolute angle (0.01–0.08 rad), suggesting strong attitude control, bu",
+      "key_metrics": {
+        "mean_length": 71.9
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "*Flagged wrong direction:** None of the metrics are moving in a positive direction; they are essentially flat with minor",
+        "**Suspicious mean values:** `_outcome` is persistently negative and dominant. Its value reflects terminal penalties (e.g"
+      ]
+    },
+    {
+      "round": "round1",
+      "behavior_summary": "## Perception Report – Lunar Lander Training\n\n### 1. Behavior Trend Summary\n\n* **Timestep 200k**: The policy flies at high altitude (height ~43.5), with large vertical speed (~16.0) and moderate angle (~0.31 rad). It never contacts the ground (legs_ground=0). Mean episode length is short (279.6), su",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "*Suspicious mean**: Both constant components have means that are far from zero and non-informative. The learning signal "
+      ]
+    },
+    {
+      "round": "round2",
+      "behavior_summary": "## Perception Agent Report\n\n### 1. Behavior Trend Summary\n\nAt the initial evaluation (200k steps), the agent terminated episodes early (mean length 303) with high vertical speed (21.4), high altitude (69.3), and moderate angle (0.20 rad). By 400k, it had learned to survive full episodes (mean length",
+      "key_metrics": {
+        "mean_length": 303.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Active components (mean significantly non-zero):** `r_landing_bonus` (20.0), `r_crash_penalty` (-10.0), `r_alive` (0.1",
+        "**Suspicious mean values:** The constant +20 `r_landing_bonus` and constant -10 `r_crash_penalty` are likely **misspecif"
+      ]
+    },
+    {
+      "round": "round2",
+      "behavior_summary": "## 1. Behavior Trend Summary\n\nAt 200k steps, episodes were short (mean length 303) with high vertical speed (21.38), large angle (0.20), and high altitude (≈69 units). The agent descended rapidly and likely crashed. By 400k, episodes hit the maximum length (1000), vertical speed dropped sharply (2.7",
+      "key_metrics": {
+        "mean_length": 303.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious values:** `r_alive`, `r_crash_penalty`, and `r_landing_bonus` all have **zero standard deviation**, indicat"
+      ]
+    },
+    {
+      "round": "round3",
+      "behavior_summary": "# Perception Agent Report\n\n## 1. Behavior Trend Summary\n\nThe policy learns to bring the lander from high altitude and high vertical speed (height ~152, vert_speed ~29 at 200k) down to near-ground hovering (height ~2.5, vert_speed ~0.49 at 1M). It consistently achieves leg contact (legs_ground rises ",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "*Dominant component:** r_landing_bonus. Its constant mean and zero variance are suspicious – it is likely awarded for a "
+      ]
+    },
+    {
+      "round": "round3",
+      "behavior_summary": "## Perception Agent Report\n\n### 1. Behavior Trend Summary\n- **At 200k steps:** The lander is high (height ~152), moving fast vertically (speed ~29), with no leg contact (legs_ground=0). Episodes average 716 steps, often ending early (likely crashes).\n- **At 400k–800k steps:** The policy learns to ex",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious component:** `r_landing_bonus` has constant value (std=0) and very high mean, suggesting it fires at every "
+      ]
+    },
+    {
+      "round": "round4",
+      "behavior_summary": "## Perception Report: Lunar Lander Agent Behavior\n\n### 1. Behavior Trend Summary\n\n| Timestep | Mean Length | Height | Vert Speed | Legs Ground | Dist to Pad | Key Behavior |\n|----------|-------------|--------|------------|-------------|-------------|--------------|\n| 200K     | 470.6       | 61.01  ",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Dominant**: r_landing_bonus (84.6% of total absolute reward). Its mean of 20.0 with zero variance is highly suspicious"
+      ]
+    },
+    {
+      "round": "round4",
+      "behavior_summary": "## 1. Behavior Trend Summary\n\n- **200k timesteps:** Episodes average 470 steps before termination. The lander is high (height ~61), descending fast (vertical speed ~11), far from pad (~8.2), and never contacts the ground. It crashes early.\n- **400k–600k:** Episode length reaches the maximum (1000). ",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "*Wrong‑direction flag:** `dist_to_pad` – no reduction; `survival_fraction` – stuck at 0.",
+        "**Suspicious values:**"
+      ]
+    },
+    {
+      "round": "round5",
+      "behavior_summary": "## Perception Report: Lunar Lander Training Analysis\n\n### 1. Behavior Trend Summary\n\nAt each evaluation milestone, the agent exhibits a clear trajectory of descending from high altitude to a stable low hover, but fails to move horizontally toward the landing pad.\n\n- **200k timesteps:** The agent is ",
+      "key_metrics": {
+        "mean_length": 963.7
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious components:** Both `r_landing_bonus` and `r_crash_penalty` have **zero variance** across steps. This is hig"
+      ]
+    }
+  ],
+  "trends": {
+    "mean_length_trend": {
+      "start": 71.9,
+      "end": 963.7,
+      "direction": "increasing",
+      "values": [
+        71.9,
+        303.0,
+        303.0,
+        963.7
+      ]
+    }
+  },
+  "dynamics_profile": "",
+  "cross_round_insights": "Episode length increasing (72 → 964)"
+}

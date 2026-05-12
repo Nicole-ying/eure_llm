@@ -1,0 +1,8 @@
+{
+  "env_id": "HalfCheetah-v4-round0",
+  "total_timesteps": 1000000,
+  "n_envs": 1,
+  "elapsed_seconds": 10303.37,
+  "elapsed_minutes": 171.72,
+  "timestamp": "2026-05-12T02:46:46+08:00"
+}

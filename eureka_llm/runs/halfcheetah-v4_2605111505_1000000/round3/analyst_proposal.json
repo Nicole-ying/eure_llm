@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The policy is stuck in a local optimum with low forward velocity (~1.2) and zero variance across episodes because the linear forward reward does not incentivize breaking into higher-speed regimes and no exploration mechanism is present.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_forward",
+      "current_code": "r_forward = 1.5 * forward_vel",
+      "new_code": "r_forward = 1.5 * (math.exp(forward_vel) - 1.0)",
+      "reason": "Change from linear to exponential reward for forward velocity. At the current velocity (~1.2), the exponential reward (~3.48) is higher than the linear (~1.8), but more importantly, the gradient grows with velocity: a small increase from 1.2 to 1.5 (25% increase) yields a reward jump from ~3.48 to ~5.72 (65% increase). This creates a strong incentive to explore higher speeds, breaking the local optimum."
+    },
+    {
+      "component": "new: r_explore",
+      "current_code": "(not present)",
+      "new_code": "# Exploration bonus: reward for variation in forward velocity over recent steps\nif not hasattr(self, '_vel_buffer'):\n    self._vel_buffer = collections.deque(maxlen=200)\nself._vel_buffer.append(forward_vel)\nif len(self._vel_buffer) == 200:\n    std_vel = np.std(list(self._vel_buffer))\n    r_explore = 0.1 * std_vel\nelse:\n    r_explore = 0.0\n# Add to components and total",
+      "reason": "Directly rewards behavioral diversity by paying a small bonus proportional to the standard deviation of forward velocity over the last 200 steps. This encourages the agent to try different speeds, directly addressing state_coverage. The weight 0.1 provides a non-trivial signal (~0.01-0.05 per step) without dominating the forward reward."
+    }
+  ],
+  "predicted_effect": "The agent will gradually increase its forward velocity above the current 1.2 plateau, leading to occasional falls (since faster running is riskier) and thus episode length will drop below 1000.0 for some evaluations. Over time, the policy should converge to a faster, more dynamic gait with higher mean velocity and moderate episode length (e.g., 900-1000). The exploration bonus will increase velocity variance, making the policy less brittle.",
+  "max_risk": "Exponential reward may cause the agent to learn extremely jerky, high-velocity gaits that are energetically unsustainable or cause bodily damage (if the environment penalizes joint limits). The exploration bonus could also reward noise rather than structured exploration, leading to erratic behavior without improving task performance.",
+  "risk_mitigation": "Monitor metrics_fn outputs: if 'forward_power' (velocity * action magnitude) increases disproportionately to velocity, or if 'torso_angular_velocity' becomes unstable, we detect inefficient high-energy gaits. Also track episode length drop – if mean_length falls below 500, the exploration weight may need reduction. The exploration bonus weight (0.1) is conservative; we can decrease to 0.05 if instability occurs."
+}

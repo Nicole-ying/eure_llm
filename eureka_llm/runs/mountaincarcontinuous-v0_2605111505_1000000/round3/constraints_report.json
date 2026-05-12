@@ -1,0 +1,26 @@
+{
+  "violations": [
+    {
+      "principle": "temporal_consistency",
+      "severity": "medium",
+      "evidence": {
+        "metric": "heading",
+        "early_mean": 0.1205,
+        "late_mean": 0.3766,
+        "relative_drift": 2.1263
+      },
+      "diagnosis": "Behavior metric shifted strongly between early and late training windows; intra-policy dynamics may be inconsistent."
+    },
+    {
+      "principle": "termination_exploitation",
+      "severity": "medium",
+      "evidence": {
+        "length_mean": 93.2,
+        "length_max": 616,
+        "ratio": 0.151
+      },
+      "diagnosis": "Average episode length is far below observed max; agent may be exploiting early termination dynamics."
+    }
+  ],
+  "count": 2
+}

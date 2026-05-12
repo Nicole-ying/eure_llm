@@ -1,0 +1,18 @@
+{
+  "agent": "constraints",
+  "version": 1,
+  "history": [
+    {
+      "round": "round2",
+      "count": 5
+    },
+    {
+      "round": "round3",
+      "count": 4
+    },
+    {
+      "round": "round4",
+      "count": 4
+    }
+  ]
+}

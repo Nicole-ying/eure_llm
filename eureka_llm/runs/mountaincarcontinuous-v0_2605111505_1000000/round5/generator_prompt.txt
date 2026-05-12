@@ -1,0 +1,277 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- If `violated_principle` is present, ensure code modifications explicitly address that principle.
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- **Find attributes from step() source**: Look at the step() source code from the Task Manifest. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. Do NOT guess attribute names not seen there.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let a single failed lookup crash the whole function.
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+When resolving conflicts, prioritize principle-consistent behavior over ad-hoc coefficient patching.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 4).
+Source: round4
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 4).
+Source: round3 → round4: applied analyst proposal to fix reward_goal_alignment.
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, position, velocity, action, terminated):
+    """
+    Reward function for MountainCar (round 4).
+    
+    Physics: The car must build momentum by oscillating left and right.
+    A weak engine cannot push directly up the hill.
+    
+    Changes from round 3 (analyst proposal):
+    - Increased r_velocity coefficient from 0.5 → 2.0 to strongly incentivise
+      movement in both directions (needed for building momentum).
+    - Removed signed direction reward (r_direction = 0.0) because it penalised
+      leftward movement and prevented oscillation.
+    
+    Signals:
+    - r_progress: dense reward combining absolute velocity bonus (2.0 * |v|)
+      and action penalty (-0.01 * |action|). The new velocity coefficient
+      (~0.06 at current speeds) is clearly larger than the action penalty
+      (~0.01), making movement beneficial.
+    - r_proximity: distance penalty (-0.01 * max(0, 0.5 - position)).
+      Provides a weak shaping gradient toward the goal.
+      Coefficient -0.01 keeps the penalty small (< -0.017) so it never dominates.
+    - r_goal: sparse goal bonus (1.0 only when position >= 0.5 and velocity >= 0).
+    - _outcome: evaluation-only flag, not part of reward total.
+    """
+    # --- Dense components ---
+    # Absolute velocity bonus: 2.0 * |v|, max ~0.14 at max speed (~0.07).
+    # Increased from 0.5 to provide stronger movement incentive.
+    r_velocity = 2.0 * abs(velocity)
+    
+    # Action penalty: -0.01 * |action|, max -0.01 at full throttle.
+    # Discourages wasteful full‑throttle stalls that produce no momentum.
+    action_penalty = -0.01 * abs(action[0])
+    
+    # Signed velocity reward: removed (set to 0.0) to allow free leftward
+    # movement needed for building oscillation momentum.
+    r_direction = 0.0
+    
+    # Proximity penalty: -0.01 * max(0, 0.5 - position).
+    # Distance ranges from 0 (at goal) to ~1.7 (at left edge), so penalty
+    # ranges from 0 to -0.017. Provides shaping signal even when velocity is zero.
+    r_proximity = -0.01 * max(0.0, 0.5 - position)
+    
+    r_progress = r_velocity + action_penalty + r_direction + r_proximity
+    
+    components = {"r_progress": r_progress}
+    
+    # --- Sparse goal component ---
+    if terminated:
+        # Determine success using observation state only (no engine internals)
+        success = (position >= 0.5) and (velocity >= 0.0)
+        components["r_goal"] = 1.0 if success else 0.0
+        components["_outcome"] = 1.0 if success else -1.0
+        total = r_progress + components["r_goal"]   # reward total before _outcome
+    else:
+        components["r_goal"] = 0.0
+        total = r_progress
+    
+    return float(total), components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task‑level metrics independent of the reward.
+    All attributes are accessed with getattr for safety.
+    """
+    # Current observation
+    state = getattr(env, 'state', [0.0, 0.0])
+    position = state[0] if len(state) > 0 else 0.0
+    velocity = state[1] if len(state) > 1 else 0.0
+    
+    # Goal constants (from the environment)
+    goal_position = 0.5
+    goal_velocity = 0.0
+    
+    # Distance remaining to the goal (clipped at 0)
+    distance_to_goal = max(0.0, goal_position - position)
+    
+    # Speed magnitude
+    abs_velocity = abs(velocity)
+    
+    # Action magnitude (force applied)
+    action_force = abs(action[0])
+    
+    # Did the car reach the goal this step?
+    reached_goal = 1.0 if (position >= goal_position and velocity >= goal_velocity) else 0.0
+    
+    # Normalised heading: +1 if moving right, -1 if left, 0 if stopped
+    heading = 0.0
+    if abs_velocity > 1e-6:
+        heading = velocity / abs_velocity
+    
+    return {
+        "dist_to_goal": distance_to_goal,
+        "velocity_mag": abs_velocity,
+        "action_force": action_force,
+        "reached_goal": reached_goal,
+        "heading": heading,
+    }
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The _outcome terminal penalty (-1) dominates the reward signal (~97% of magnitude), forcing the agent to prioritize episode length over task progress — it jitters with high force but negligible net velocity to avoid termination while collecting a tiny positive dense reward.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "_outcome",
+      "current_code": "components[\"_outcome\"] = 1.0 if success else -1.0",
+      "new_code": "components[\"_outcome\"] = 0.0  # removed from training signal to prevent domination",
+      "reason": "The _outcome penalty (mean -0.99, 96.8% of total) has been the persistent root cause across 4 rounds — it drowns out all shaping signals and forces the agent to maximize episode length rather than solve the task. Setting it to 0.0 ensures it cannot affect the optimization target."
+    },
+    {
+      "component": "r_velocity",
+      "current_code": "r_velocity = 2.0 * abs(velocity)",
+      "new_code": "r_velocity = 5.0 * abs(velocity)",
+      "reason": "With _outcome removed, the dense reward becomes the primary signal. Increasing the velocity coefficient from 2.0 to 5.0 makes movement 2.5x more rewarding (0.35/step at max speed vs. 0.14 currently), providing a strong gradient to pull the agent out of the low-velocity jitter local optimum and incentivize building momentum through back-and-forth oscillation."
+    }
+  ],
+  "predicted_effect": "The agent will begin moving with higher velocity (targeting at least 0.05–0.07) and exploring both leftward and rightward directions, gradually building momentum. The episode length may decrease as the agent learns to climb the hill, and dist_to_goal should trend downward from ~0.96 toward 0.0. Goal attainment should appear within 5–10 evaluation checkpoints.",
+  "max_risk": "If _outcome was actually NOT being included in training (and the perception interpretation was wrong), removing it has no negative effect. However, increasing the velocity coefficient to 5.0 might cause the agent to overshoot or oscillate at high speed without making net progress toward the goal (reward hacking the absolute velocity without direction awareness).",
+  "risk_mitigation": "Monitor velocity_mag and dist_to_goal together: if velocity_mag rises above 0.05 but dist_to_goal does not decrease (or increases), the agent is hacking the velocity bonus without moving toward the goal. In that case, add a small direction bonus or re-introduce a signed velocity component. The first evaluation checkpoint at 200K steps will reveal the trend within 2–3 hours of training."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+## Environment Description
+## Task Goal
+## Termination Analysis
+See step() source for termination conditions.
+## Observation Space
+See step() source for observation structure.
+## Action Space
+## Step Source Code
+    # ============================================================
+    # LLM generates this function
+    # metrics_fn can read env._pre_step_state for cross-step values
+    # ============================================================
+
+## Perception Report (for context)
+## Perception Agent Report: Car Valley Momentum Task
+### 1. Behavior Trend Summary
+Across all evaluation milestones, the agent consistently fails to reach the goal (reached_goal = 0). At the final timestep (1,000,000), mean episode length is 999.0, action_force is high (0.963), but velocity_mag is extremely low (0.025) and distance to goal remains above 0.96. The only deviation occurs at 600,000 steps, where mean_length drops sharply to 181.7 (likely early terminations), but it recovers to 999 by later evaluations. No consistent improvement in task progress is observed; the trajectory is flat/regressing. The agent is applying large forces but achieving negligible motion and zero goal successes.
+**Key numbers (final timestep):**
+- mean_length: 999.0
+- action_force: 0.963
+- dist_to_goal: 0.961
+- heading: 0.021
+- reached_goal: 0.0
+- velocity_mag: 0.025
+### 2. Critical Metrics
+- **dist_to_goal:** Primary measure of task progress. It remains high (~0.86–1.11) across all evaluations, showing no downward trend. This indicates the agent is not moving closer to the goal.
+- **reached_goal:** Binary success metric; persistently zero. The agent never completes the task.
+- **velocity_mag:** Measures actual movement. Extremely low (max 0.035) even though action_force is high (0.96+), revealing a severe efficiency failure.
+**Metric moving in wrong direction:** None are improving; all are stagnant or slightly worse (e.g., dist_to_goal at 1M = 0.961 vs 0.867 at 800K).
+**Cross-metric pattern:** High **action_force** (0.96) combined with very low **velocity_mag** (0.025) indicates that the agent is expending high effort but producing negligible motion. This suggests the car is either stuck, applying force in opposition to its momentum, or oscillating in place without net displacement.
+### 3. Reward Component Health
+- **Active components:** `_outcome` (mean -0.99, 96.8% of total) and `r_progress` (mean 0.033, 3.2%).
+- **Dominant component:** `_outcome` accounts for >95% of the total reward magnitude, making it fully dominant.
+- **Inactive/negligible:** `r_goal` (mean 1e-5) is effectively zero — the agent never reaches the goal, so this component contributes nothing.
+- **Suspicious mean value:** `_outcome` is persistently near -1.0 across evaluations, suggesting a strong step penalty. Despite high magnitude, it is **not aligned with task progress** — dist_to_goal does not improve, and the agent continues to incur this penalty indefinitely. The agent appears to be trading off (or ignoring) progress optimization in favor of simply surviving as long as possible (mean_length frequently hitting the 999 limit).
+- **High mean, weak alignment:** `_outcome` dominates but does not correlate with goal reach or decreasing distance; the agent is neither minimizing steps nor improving position.
+### 4. Behavioral Diagnosis
+### 5. TDRQ Diagnosis
+### 6. Constraint Violations Summary
+| Principle | Severity | Evidence | Summary |
+|-----------|----------|----------|---------|
+| Termination exploitation | Medium | mean_length=689.6 vs max=1691 (ratio 0.408); episodes often end far below the max, possibly from hitting boundaries or stability limits. | The agent appears to be exploiting early termination dynamics — average episode length is well below the maximum, suggesting premature endings that may avoid further penalty. |
+| Temporal consistency | Medium | heading drifts from early mean 0.012 to late mean 0.081 (relative drift 5.6); early_late_consistency_score=0.0. | Behavior metric shifts strongly between training windows, indicating unstable or non-consistent policy dynamics. |
+**Urgency:** Termination exploitation is more urgent because it directly impacts how the agent interacts with the environment (early exits bypass intended learning). Temporal inconsistency is secondary but indicates instability.
+### 7. Episode Consistency Summary
+**Early vs. late behavior:** The heading metric shows a large relative drift (5.6) and a consistency score of 0.0, meaning the policy’s directional behavior changed substantially over training. Early episodes had near-zero heading (pointing straight), while later episodes had slightly positive heading (pointing right). This drift **does not reflect healthy adaptation**, as it does not coincide with improved task performance (dist_to_goal unchanged). Instead, it likely reflects the agent narrowing its deterministic strategy to a slightly different, but equally ineffective, region of action space — a sign of **unstable policy collapse** rather than purposeful refinement.
+### 8. Key Numbers for Budget Calculation
+**From evaluation metrics table (final timestep 1,000,000):**
+- mean_length: 999.0
+- action_force: 0.963149
+- dist_to_goal: 0.960802
+- heading: 0.021421
+- reached_goal: 0.0
+- velocity_mag: 0.02542
+**Other milestones:**
+- At 200,000: mean_length=999.0, dist_to_goal=1.1088, heading=-0.0104, velocity=0.0003
+- At 400,000: mean_length=999.0, dist_to_goal=0.8882, heading=0.0350, velocity=0.0181
+- At 600,000: mean_length=181.7, dist_to_goal=0.9144, heading=0.1877, velocity=0.0314
+- At 800,000: mean_length=999.0, dist_to_goal=0.8673, heading=0.0345, velocity=0.0349
+
+## Environment Constraints
+- (no specific constraints derived)

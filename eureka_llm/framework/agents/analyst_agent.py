@@ -39,6 +39,13 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
     sys_prompt_path = Path(__file__).resolve().parent.parent.parent / "templates" / "analyst_system_prompt.txt"
     sys_prompt = sys_prompt_path.read_text("utf-8") if sys_prompt_path.exists() else ANALYST_SYSTEM_PROMPT
 
+    # Load prompt policy for compaction limits
+    compaction_stats = {}
+    policy = load_prompt_policy(
+        run_dir.parent if run_dir.name.startswith("round") else run_dir,
+        "analyst",
+    )
+
     # Load perception report
     perception_report = ""
     perception_path = run_dir / "perception_report.md"
@@ -491,7 +498,3 @@ def _extract_metrics_from_report(report: str, behavior: dict, components: dict):
                 nums = re.findall(r"[-+]?\d*\.?\d+", line)
                 if nums:
                     behavior["mean_length"] = float(nums[0])
-            # Also extract any env-specific metrics (k=v pairs)
-            # These are already handled via env_metadata in the analyst prompt
-    policy = load_prompt_policy(run_dir.parent if run_dir.name.startswith("round") else run_dir, "analyst")
-    compaction_stats = {}

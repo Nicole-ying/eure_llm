@@ -1,0 +1,54 @@
+{
+  "critic_report": {
+    "status": "needs_revision",
+    "critic_flags": [
+      "High-severity principle violation present: reward_goal_alignment"
+    ],
+    "recommendation": "Address high-severity violations first."
+  },
+  "constraints_report": {
+    "violations": [
+      {
+        "principle": "reward_goal_alignment",
+        "severity": "high",
+        "evidence": {
+          "component": "_outcome",
+          "mean": -1.0,
+          "std": 0.0
+        },
+        "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+      },
+      {
+        "principle": "state_coverage",
+        "severity": "medium",
+        "evidence": {
+          "mean_length_min": 999.0,
+          "mean_length_max": 999.0
+        },
+        "diagnosis": "Episode lengths are concentrated in a narrow range; policy may be locked into a repetitive local optimum."
+      },
+      {
+        "principle": "temporal_consistency",
+        "severity": "medium",
+        "evidence": {
+          "metric": "heading",
+          "early_mean": -0.0062,
+          "late_mean": 0.0916,
+          "relative_drift": 15.752
+        },
+        "diagnosis": "Behavior metric shifted strongly between early and late training windows; intra-policy dynamics may be inconsistent."
+      },
+      {
+        "principle": "termination_exploitation",
+        "severity": "medium",
+        "evidence": {
+          "length_mean": 728.6,
+          "length_max": 1948,
+          "ratio": 0.374
+        },
+        "diagnosis": "Average episode length is far below observed max; agent may be exploiting early termination dynamics."
+      }
+    ],
+    "count": 4
+  }
+}

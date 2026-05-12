@@ -1,0 +1,57 @@
+{
+  "critic_report": {
+    "status": "needs_revision",
+    "critic_flags": [
+      "Proposal changes too many items; risk of unstable credit assignment.",
+      "High-severity principle violation present: reward_goal_alignment",
+      "High-severity principle violation present: reward_goal_alignment"
+    ],
+    "recommendation": "Address high-severity violations first."
+  },
+  "constraints_report": {
+    "violations": [
+      {
+        "principle": "reward_goal_alignment",
+        "severity": "high",
+        "evidence": {
+          "component": "r_crash_penalty",
+          "mean": -1.0,
+          "std": 0.0
+        },
+        "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+      },
+      {
+        "principle": "reward_goal_alignment",
+        "severity": "high",
+        "evidence": {
+          "component": "r_landing_bonus",
+          "mean": 20.0,
+          "std": 0.0
+        },
+        "diagnosis": "Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal."
+      },
+      {
+        "principle": "temporal_consistency",
+        "severity": "medium",
+        "evidence": {
+          "metric": "legs_ground",
+          "early_mean": 0.0,
+          "late_mean": 0.307,
+          "relative_drift": 307002.3333
+        },
+        "diagnosis": "Behavior metric shifted strongly between early and late training windows; intra-policy dynamics may be inconsistent."
+      },
+      {
+        "principle": "termination_exploitation",
+        "severity": "medium",
+        "evidence": {
+          "length_mean": 479.6,
+          "length_max": 1997,
+          "ratio": 0.24
+        },
+        "diagnosis": "Average episode length is far below observed max; agent may be exploiting early termination dynamics."
+      }
+    ],
+    "count": 4
+  }
+}

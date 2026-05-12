@@ -55,6 +55,18 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
     traj = data["traj_summary"]
     lens = traj.get("lengths", {})
 
+    # Load task description from Task Manifest
+    task_description = ""
+    manifest_path = run_dir.parent / "memory" / "TASK_MANIFEST.md"
+    if manifest_path.exists():
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        m = re.search(
+            r"## Environment Description\s*\n(.*?)(?=\n## |\Z)",
+            manifest_text, re.DOTALL
+        )
+        if m:
+            task_description = m.group(1).strip()
+
     placeholders = {
         "metrics_table": format_metrics_table(
             data["eval_history"],
@@ -73,6 +85,7 @@ def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
         "constraint_discovery_section": format_constraint_discovery_section(data["traj_summary"], data["eval_history"]),
         "action_cross_metrics_section": format_action_cross_metrics_section(data["traj_summary"], data["eval_history"]),
         "episode_consistency_section": format_episode_consistency_section(data["traj_summary"], data["eval_history"]),
+        "task_description": task_description,
         "n_traj_episodes": str(traj.get("n_episodes", 0)),
         "traj_len_mean": str(lens.get("mean", "?")),
         "traj_len_min": str(lens.get("min", "?")),
@@ -139,16 +152,26 @@ def run_perception_agent(run_dir: Path, api_key: str,
         encoding="utf-8"
     )
 
-    # Phase-2: update persistent Perception belief state
+    # Phase-2 v2: update persistent Perception belief state with structured data
     try:
         from memory.memory_system import MemorySystem
         mem = MemorySystem(run_dir.parent if run_dir.name.startswith("round") else run_dir)
-        mem.update_belief("perception", {
-            "round": run_dir.name,
-            "summary": report[:400],
-        })
+        # Extract structured fields from the report
+        key_metrics = _extract_key_metrics_from_report(report)
+        dynamics_trend = _extract_dynamics_trend(report)
+        patterns = _extract_identified_patterns(report)
+        anomalies = _extract_anomalies(report)
+        mem.update_perception_belief_v2(
+            round_name=run_dir.name,
+            behavior_summary=report[:400],
+            key_metrics=key_metrics,
+            dynamics_trend=dynamics_trend,
+            identified_patterns=patterns,
+            anomalies=anomalies,
+        )
     except Exception:
-        pass
+        import traceback
+        traceback.print_exc()
 
     return report
 
@@ -182,6 +205,68 @@ def answer_perception_query(run_dir: Path, query: str) -> str:
         f"n_episodes={traj.get('n_episodes', 0)}, lengths={traj.get('lengths', {})}, "
         f"cross_metrics={cross}, violations={violations[:3]}"
     )
+
+
+def _extract_key_metrics_from_report(report: str) -> dict:
+    """Extract numeric key metrics from perception report via regex."""
+    metrics = {}
+    # mean_length
+    m = re.search(r'mean[\s_]*length[:\s]*([\d.]+)', report, re.IGNORECASE)
+    if m:
+        metrics["mean_length"] = float(m.group(1))
+    # success / completion rate
+    m = re.search(r'(success|completion)[\s_]*rate[:\s]*([\d.]+)', report, re.IGNORECASE)
+    if m:
+        metrics["success_rate"] = float(m.group(2))
+    # action magnitude
+    m = re.search(r'action[\s_]*magnitude[:\s]*([\d.]+)', report, re.IGNORECASE)
+    if m:
+        metrics["action_magnitude"] = float(m.group(1))
+    # velocity / efficiency
+    m = re.search(r'(velocity|efficiency)[:\s]*([\d.]+)', report, re.IGNORECASE)
+    if m:
+        metrics[m.group(1).lower()] = float(m.group(2))
+    return metrics
+
+
+def _extract_dynamics_trend(report: str) -> str:
+    """Extract the behavior trend sentence from the report."""
+    # Look for "Behavior Trend" or "Trend" section
+    for pattern in [r'Behavior[:\s]*Trend[:\s]*[—\-]?\s*(.+?)(?:\n|$)',
+                     r'Trend[:\s]*(.+?)(?:\n|$)']:
+        m = re.search(pattern, report, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()[:200]
+    return ""
+
+
+def _extract_identified_patterns(report: str) -> list:
+    """Extract listed behavioral patterns from the report."""
+    patterns = []
+    # Look for bullet points under pattern/behavior/diagnosis sections
+    in_section = False
+    for line in report.splitlines():
+        if re.search(r'(?:identified|behavioral|key)\s*patterns?', line, re.IGNORECASE):
+            in_section = True
+            continue
+        if in_section:
+            if line.startswith("##") or (line.startswith("###") and not line.startswith("####")):
+                break
+            m = re.match(r'[-*]\s*(.+?)$', line)
+            if m:
+                patterns.append(m.group(1).strip()[:100])
+    return patterns[:5]
+
+
+def _extract_anomalies(report: str) -> list:
+    """Extract anomaly/flagged items from the report."""
+    anomalies = []
+    for line in report.splitlines():
+        if re.search(r'(?:anomal|flag|warning|unusual|unexpected|suspicious)', line, re.IGNORECASE):
+            m = re.match(r'[-*\d+.]\s*(.+?)$', line)
+            if m:
+                anomalies.append(m.group(1).strip()[:120])
+    return anomalies[:3]
 
 
 def _generate_fallback_report(run_dir: Path) -> str:

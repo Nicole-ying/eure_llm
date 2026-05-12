@@ -1,8 +1,0 @@
-{
-  "env_id": "BipedalWalker-v3-round0",
-  "total_timesteps": 5000000,
-  "n_envs": 32,
-  "elapsed_seconds": 14318.68,
-  "elapsed_minutes": 238.64,
-  "timestamp": "2026-05-06T18:43:38+08:00"
-}

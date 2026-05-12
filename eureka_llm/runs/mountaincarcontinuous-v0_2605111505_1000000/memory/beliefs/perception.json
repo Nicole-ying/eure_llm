@@ -1,0 +1,92 @@
+{
+  "agent": "perception",
+  "version": 2,
+  "history": [
+    {
+      "round": "round0",
+      "behavior_summary": "### 1. Behavior Trend Summary\n\nAt every evaluation milestone (200k to 1M timesteps), the policy consistently applies near-maximum force (action_force ≈ 1.0) while the car remains nearly stationary at the bottom of the valley. The distance to the goal stays high (~0.78–0.81), the heading is a small p",
+      "key_metrics": {
+        "mean_length": 999.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**dist_to_goal (0.78, not decreasing):** Directly measures progress; the high and flat value indicates the car is not mo",
+        "**Suspicious means:** `r_goal` and `_outcome` have mean = 1.0 with std = 0.0, persistently across all evaluations. This "
+      ]
+    },
+    {
+      "round": "round1",
+      "behavior_summary": "## Perception Report: Car Valley Momentum Task\n\n### 1. Behavior Trend Summary\n\n- **At 200k timesteps**: The policy applies moderate force (mean action_force = 0.24) and achieves a small initial reduction in distance to goal (from ~0.97 to 0.97? Actually 0.974 at 200k). The agent moves very slowly (v",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "*Flagged metric moving in wrong direction**: None move negatively, but the lack of any positive trend (especially dist_t",
+        "**Suspicious mean**: r_goal = 1.0 with std = 0.0 – this is a classic sign of a reward component that does not depend on "
+      ]
+    },
+    {
+      "round": "round2",
+      "behavior_summary": "# Training Observation Report\n\n## 1. Behavior Trend Summary\n\nAt each evaluation milestone, the policy maintains a **constant episode length of 999 steps** (likely the episode timeout) with **never reaching the goal** (`reached_goal = 0.0` at all checkpoints). The action force magnitude fluctuates ac",
+      "key_metrics": {},
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious mean:** `_outcome` is constant at −1.0 with zero variance – no step‑to‑step information, can be “harvested”"
+      ]
+    },
+    {
+      "round": "round3",
+      "behavior_summary": "# Perception Report: Mountain Car Hill-Climbing Agent\n\n## 1. Behavior Trend Summary\n- **Early evaluations (200k–400k timesteps):** The agent initially drives slightly leftwards (heading negative) with mean episode length ~71–88 steps. Action force is near maximum (≈0.98). Distance to goal is ~1.08–1",
+      "key_metrics": {
+        "mean_length": 99.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious pattern:** Despite never reaching the goal, the `_outcome` component is large and dominant. This strongly s",
+        "*The agent’s current strategy is to apply maximum throttle while driving continuously to the right (positive heading).**"
+      ]
+    },
+    {
+      "round": "round3",
+      "behavior_summary": "# Structured Observation Report\n\n## 1. Behavior Trend Summary\n\nAt each evaluation milestone (200k to 1M timesteps), the policy applies near-maximum throttle (action_force ≈ 0.95–0.99) and keeps the car’s heading roughly 0.38 rad (≈22°) to the right. The velocity magnitude remains extremely low (~0.0",
+      "key_metrics": {
+        "mean_length": 99.2
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious values**: `_outcome` has a high mean (0.422) but is **weakly aligned with task progress** – the distance to"
+      ]
+    },
+    {
+      "round": "round4",
+      "behavior_summary": "## Perception Agent Report: Car Valley Momentum Task\n\n### 1. Behavior Trend Summary\n\nAcross all evaluation milestones, the agent consistently fails to reach the goal (reached_goal = 0). At the final timestep (1,000,000), mean episode length is 999.0, action_force is high (0.963), but velocity_mag is",
+      "key_metrics": {
+        "mean_length": 999.0
+      },
+      "dynamics_trend": "Summary",
+      "identified_patterns": [],
+      "anomalies": [
+        "**Suspicious mean value:** `_outcome` is persistently near -1.0 across evaluations, suggesting a strong step penalty. De"
+      ]
+    }
+  ],
+  "trends": {
+    "mean_length_trend": {
+      "start": 999.0,
+      "end": 999.0,
+      "direction": "stable",
+      "values": [
+        999.0,
+        99.0,
+        99.2,
+        999.0
+      ]
+    }
+  },
+  "dynamics_profile": "",
+  "cross_round_insights": "Episode length stable (999 → 999)"
+}

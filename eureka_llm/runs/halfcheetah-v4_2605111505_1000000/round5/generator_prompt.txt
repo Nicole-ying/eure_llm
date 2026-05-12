@@ -1,0 +1,285 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- If `violated_principle` is present, ensure code modifications explicitly address that principle.
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- **Find attributes from step() source**: Look at the step() source code from the Task Manifest. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. Do NOT guess attribute names not seen there.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let a single failed lookup crash the whole function.
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+When resolving conflicts, prioritize principle-consistent behavior over ad-hoc coefficient patching.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 4).
+Source: round4
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 3, modified per analyst proposal).
+Addresses exploration_balance and state_coverage by introducing an exponential
+forward-velocity reward and an explicit velocity-variance exploration bonus.
+Source: round3 (modified)
+"""
+
+import math
+import numpy as np
+import collections
+
+def compute_reward(self, obs, action, terminated, truncated, info):
+    """
+    Primary dynamics: forward propulsion via leg actuation.
+    The dominant physical process is the conversion of joint torques into horizontal movement
+    while maintaining balance on a flat plane. Since there is no gravity-induced failure,
+    the agent can stand still indefinitely, so the reward must actively drive forward motion.
+    The simplest learnable signal is the body's forward velocity, which directly reflects
+    task progress. A smoothness penalty prevents erratic movements that waste energy without
+    contributing to speed.
+    """
+    import numpy as np
+
+    # Initialize cross-step state if needed
+    if not hasattr(self, '_step_count'):
+        self._prev_action = np.zeros(6)   # first step: assume zero previous action
+        self._prev_forward_vel = 0.0      # first step: assume zero previous velocity
+        self._step_count = 0
+        self._vel_buffer = collections.deque(maxlen=200)  # stores recent velocities for exploration bonus
+    self._step_count += 1
+
+    # Extract forward velocity from observation.
+    # Based on typical HalfCheetah-v2 observation order (index 8 = x velocity).
+    # If actual environment differs, this line would be adjusted.
+    forward_vel = obs[8]  # shape: scalar
+
+    # Reward component 1: forward velocity (primary task signal)
+    # Changed from linear to exponential to create increasing gradient with speed,
+    # breaking the local optimum and strongly incentivizing exploration of higher velocities.
+    # weight 1.5: increased pressure to achieve higher absolute speed (per analyst proposal)
+    # Exponential base (math.exp(forward_vel) - 1.0) ensures reward stays >= 0, with gradient proportional to current velocity.
+    r_forward = 1.5 * (math.exp(forward_vel) - 1.0)
+
+    # Reward component 2: action smoothness penalty (encourage smooth, efficient actuation)
+    # Weight 0.001: reduced from 0.01 to reduce penalty magnitude, encouraging faster forward speed.
+    # The penalty is small enough not to dominate r_forward, but still discourages erratic jerks.
+    action_delta = action - self._prev_action
+    r_smooth = -0.001 * np.sum(action_delta ** 2)  # weight 0.001: avoids suppressing needed motion
+    self._prev_action = action.copy()  # store for next step
+
+    # Reward component 3: velocity gradient bonus (r_delta), per analyst proposal
+    # Changed from one-sided (increase-only) to two-sided (absolute difference) to encourage
+    # speed variation and exploration of different gaits (addresses exploration_balance state_coverage).
+    r_delta = abs(forward_vel - self._prev_forward_vel)
+    self._prev_forward_vel = forward_vel  # store for next step
+
+    # Reward component 4 (new): Exploration bonus based on velocity standard deviation over last 200 steps.
+    # Weight 0.1: provides a modest bonus (~0.01–0.05 per step) proportional to recent velocity variation,
+    # encouraging the agent to try different speeds directly addressing state_coverage.
+    self._vel_buffer.append(forward_vel)
+    if len(self._vel_buffer) == 200:
+        std_vel = np.std(list(self._vel_buffer))
+        r_explore = 0.1 * std_vel
+    else:
+        r_explore = 0.0
+
+    components = {
+        "r_forward": r_forward,
+        "r_smooth": r_smooth,
+        "r_delta": r_delta,
+        "r_explore": r_explore,
+    }
+    total = sum(components.values())
+
+    # Terminal outcome (for evaluation only) – not added to total reward
+    if terminated:
+        # No early termination possible (all episodes truncated), so outcome is neutral.
+        components["_outcome"] = 0.0
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of reward.
+    Collects key performance indicators for the HalfCheetah running task.
+    """
+    import numpy as np
+
+    # Safely access observation from env (assumes env has obs after step)
+    obs = getattr(env, 'obs', None)
+    if obs is None:
+        # Fallback: try env.base_env.obs (if wrapped)
+        base = getattr(env, 'base_env', None)
+        if base is not None:
+            obs = getattr(base, 'obs', None)
+        if obs is None:
+            return {"error": "observation unavailable"}
+
+    # Assume HalfCheetah observation indices (common for 17-dim version):
+    # 0: torso height, 8: x velocity, 10: torso angular velocity, 12-16: joint velocities (if needed)
+    forward_vel = obs[8] if len(obs) > 8 else 0.0
+    torso_ang_vel = obs[10] if len(obs) > 10 else 0.0
+
+    # Action magnitude (mean absolute torque)
+    action_mag = float(np.mean(np.abs(action)))
+
+    # Action smoothness (mean absolute change from previous action)
+    # Use stored previous action from env if available
+    prev_action = getattr(env, '_prev_action', np.zeros_like(action))
+    action_delta = action - prev_action
+    action_smoothness = float(np.mean(np.abs(action_delta)))
+
+    # Approximate forward power (velocity * action magnitude) – not a reward, but useful metric
+    forward_power = forward_vel * action_mag if abs(forward_vel) > 0.01 else 0.0
+
+    # Additional metric: acceleration (derived from stored previous velocity)
+    prev_vel = getattr(env, '_prev_forward_vel', None)
+    if prev_vel is not None:
+        acceleration = float(forward_vel - prev_vel)
+    else:
+        acceleration = 0.0
+
+    return {
+        "forward_velocity": float(forward_vel),
+        "torso_angular_velocity": float(torso_ang_vel),
+        "action_magnitude": action_mag,
+        "action_smoothness": action_smoothness,
+        "forward_power": forward_power,
+        "acceleration": acceleration,
+    }
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "Exploration collapse: the policy is stuck in a deterministic high-speed gait that maximizes the dominant forward reward (89.4% of total) while the exploration bonus (weight 0.1) is too weak to induce behavioral variation, and the absence of any noise mechanism prevents genuine state-space exploration.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_explore weight",
+      "current_code": "r_explore = 0.1 * std_vel",
+      "new_code": "r_explore = 1.0 * std_vel",
+      "reason": "Increasing the exploration bonus weight from 0.1 to 1.0 makes it comparable to the forward reward (~23.64) when velocity variance is moderate (e.g., std_vel ~15 yields r_explore=15). This provides a strong, direct incentive for the agent to try different speeds and gaits, directly addressing exploration balance and state coverage. The net reward remains positive because the bonus scales with actual variance, and any increase in variance is rewarded proportionally."
+    },
+    {
+      "component": "action noise injection",
+      "current_code": "No action noise present",
+      "new_code": "At the beginning of compute_reward, after receiving `action`, add: action = action + np.random.normal(0, 0.1, size=6). This modifies the action before it is used for the smoothness penalty and environment step.",
+      "reason": "Adding Gaussian action noise (σ=0.1) forces stochastic exploration by perturbing the policy's outputs. This breaks the deterministic periodic attractor, enabling the exploration bonus to actually detect and reward novel velocity states. Without noise, the policy can trivially satisfy the std bonus by maintaining a fixed oscillation. Noise ensures genuine state-space coverage and aligns with the memory's unanimous recommendation from all previous rounds."
+    }
+  ],
+  "predicted_effect": "The agent will initially show increased velocity variance and slightly lower forward speed due to noise, but over training the exploration bonus will drive it to discover higher-speed gaits or more efficient patterns. Episode length may occasionally drop below 1000 if the noise causes instability, but that is a sign of healthy exploration. Eventually, forward speed should surpass the previous plateau, and the agent will explore a wider range of velocities and postures.",
+  "max_risk": "Action noise may cause the agent to waste energy or adopt highly erratic movements, reducing immediate forward reward and potentially leading to a temporary reward collapse (if forward speed drops significantly and exploration bonus does not compensate quickly). The increased exploration weight might cause the agent to prioritize variance over absolute speed, resulting in a speed-reward tradeoff. If noise is too high, the policy may become unstable and fail to maintain upright posture.",
+  "risk_mitigation": "Monitor forward_velocity mean and std, action_magnitude, and total reward per step. If forward velocity drops by more than 30% after 100k timesteps, reduce noise σ to 0.05 or add an annealing schedule. Also track episode length – if it becomes highly variable (>200 steps variation), it's a positive sign; if it drops below 500 on average, the noise may be too high. If forward velocity remains below baseline after 300k steps, reduce r_explore weight to 0.5."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+## Environment Description
+## Task Goal
+## Termination Analysis
+See step() source for termination conditions.
+## Observation Space
+See step() source for observation structure.
+## Action Space
+## Step Source Code
+
+## Perception Report (for context)
+### 1. Behavior Trend Summary
+- The policy consistently achieves the maximum episode length (1,000 steps) at every evaluation checkpoint (200k to 1M timesteps). The `error` metric is `nan`, indicating either no variance or the metric was not computed.
+- There is no observable improvement or regression in episode length across timesteps—the trajectory is **flat** with respect to this task-level metric. The agent is always allowed to run for the full horizon, meaning it never falls or fails early.
+- The most important task-level metric is `mean_length = 1000.0` at the final timestep (1,000,000). No other task metrics (e.g., speed, posture) are provided in the Evaluation Metrics table.
+### 2. Critical Metrics
+- **mean_length (1000.0)**: Critical because it confirms the agent never terminates episodes prematurely. This is a prerequisite for evaluating forward progress, but it does not capture speed or gait quality. A consistently high value (max possible) could indicate that the episode timeout is the only stopping condition, masking failures or unsafe behaviors.
+**Cross-metric pattern**:  
+The ratio `length_utilization_ratio = 1.0` and `mean_length_span_ratio = 0.0` show that every episode is exactly the same length (min = max = 1000). This extreme consistency suggests the policy is locked into a deterministic, repetitive cycle—no exploration of alternative episode durations.
+**No metric is moving in the wrong direction** because the metric is static.
+### 3. Reward Component Health
+- **Active components**:  
+  - `r_delta` (mean = 2.65), `r_explore` (mean = 0.14), `r_forward` (mean = 23.64), `r_smooth` (mean = -0.018). All have non-zero means and non-zero stds.
+- **Dominant component**:  
+  - `r_forward` (mean = 23.64, 89.4% of total) – its magnitude is ~9× larger than the next highest (`r_delta`). This component overwhelms all others.
+- **Negligible components**:  
+  - `r_smooth` has a very small negative mean (−0.018) – effectively negligible in magnitude but still active (std = 0.0033). `r_explore` (0.14) is also small relative to `r_forward`.
+- **Suspicious mean values**:  
+  - `r_forward` is persistently high and dominant across all evaluation milestones (no variation reported). This is expected for a forward-running task, but its extreme dominance raises the concern that the agent is optimizing exclusively for forward speed.
+- **Weak alignment**:  
+  - `r_forward` has high mean (23.64) but we have no independent measure of actual forward speed or gait quality. The high reward may be achieved with a cheap, repetitive motion (e.g., a galloping or bouncing gait) that maximizes velocity but violates the task intention of an upright, four-footed ground contact pattern.
+### 4. Behavioral Diagnosis (1-2 sentences)
+### 5. TDRQ Diagnosis
+### 6. Constraint Violations Summary
+- **State coverage (medium urgency)**: Episode lengths are concentrated at the maximum value (mean_length_min = mean_length_max = 1000.0). This indicates a narrow mode of behavior—the policy never experiences early termination or varied episode lengths, which is a sign of limited state-space exploration. The `length_utilization_ratio` of 1.0 confirms that all episodes are fully utilized, leaving no room for failures or alternative outcomes.
+- No other principles (e.g., reward shaping, entropy collapse) are flagged by the data.
+### 7. Episode Consistency Summary
+### 8. Key Numbers for Budget Calculation
+| Metric        | Value |
+|---------------|-------|
+| mean_length   | 1000.0 |
+| error         | nan   |
+
+## Environment Constraints
+- **No gravity detected**: Zero-action episodes survive to timeout. The agent can remain idle indefinitely. Focus reward on active task progress, not survival.
+- **High-dim action space** (6 continuous dims): Different dimensions likely control different effectors. A uniform energy penalty on ALL dimensions may penalize necessary movements. Prefer penalizing action smoothness (delta from previous step) rather than raw action magnitude.

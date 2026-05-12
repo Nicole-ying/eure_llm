@@ -1,0 +1,29 @@
+{
+  "diagnosis": "The horizontal distance penalty (w_x=0.1) is too weak relative to the alive bonus (+0.42 when low), and the alive bonus is unconditional, so the agent can collect positive net reward while landing off-pad (dist=10.26) instead of moving toward the center.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "underconstrained",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "w_x (horizontal distance weight in r_stability)",
+      "current_code": "w_x = 0.1       # horizontal distance penalty weight (doubled from 0.05, yields ~1.02 at dist=10.2)",
+      "new_code": "w_x = 0.3       # horizontal distance penalty weight (tripled to create stronger centering gradient; -3.08 at dist=10.26, still survivable)",
+      "reason": "Increasing w_x from 0.1 to 0.3 triples the per-step penalty for being far from the pad (from -1.03 to -3.08). This creates a sufficiently strong gradient that the agent can no longer afford to ignore horizontal positioning, while remaining moderate enough to avoid immediate crash collapse."
+    },
+    {
+      "component": "r_alive (alive bonus calculation)",
+      "current_code": "r_alive = 0.5 * max(0, 1.0 - state[1] / 15.0)  # at y=11.55 → ~0.115; at y=0 → 0.5; at y>15 → 0.0",
+      "new_code": "r_alive = 0.5 * max(0, 1.0 - state[1] / 15.0) * (1.0 if abs(state[0]) < 5.0 else 0.0)  # alive bonus only within 5 units of pad center to prevent off-pad descent",
+      "reason": "Removes the +0.42/step survival reward when the agent is far from the pad (dist > 5). Now descending while far from pad yields -3.08/step with no offset, forcing the agent to center before descending. Once centered (dist < 5), the alive bonus activates, making near-pad behavior net less negative and creating a clear incentive to move laterally."
+    },
+    {
+      "component": "r_crash_penalty value",
+      "current_code": "components['r_crash_penalty'] = -1.0\n            total += -1.0",
+      "new_code": "components['r_crash_penalty'] = -2.0\n            total += -2.0",
+      "reason": "Increases the penalty for an off-pad crash from -1.0 to -2.0. This strengthens the terminal consequence of landing anywhere outside the pad, making the off-pad strategy even less attractive. The success bonus (+20) remains unchanged, preserving a strong positive signal for good landings. The penalty is still moderate enough not to paralyze exploration."
+    }
+  ],
+  "predicted_effect": "The agent will learn to first move laterally toward the pad until dist < 5, then descend vertically. At that point the alive bonus (+0.42) and small proximity/leg bonuses will make near-pad behavior net slightly negative but manageable, and the agent will attempt to achieve the success condition (dist < 0.3, both legs, low speed) to collect the +20 landing bonus. Expected results: dist_to_pad < 1, legs_ground > 0, survival_fraction (episodes that achieve success) > 0, and eventually successful pad landings.",
+  "max_risk": "If the agent starts very high (>15) and far from pad (>15), the combination of strong horizontal penalty (-4.5/step) and zero alive bonus could cause the agent to crash into the ground immediately out of sheer negativity before it learns to move laterally. This could lead to a behavioral collapse (episode length dropping below 200).",
+  "risk_mitigation": "Monitor mean episode length early in training. If it drops below 200 steps (indicating immediate crash behavior), reduce w_x from 0.3 to 0.2 as a fallback. Also consider a 50-step startup grace period where alive bonus is unconditionally applied, to give the agent time to initiate lateral movement. The prior round showed mean_length=981, so the agent already has the ability to survive long episodes — the increased negativity should drive gradient descent toward centering, not immediate suicide."
+}

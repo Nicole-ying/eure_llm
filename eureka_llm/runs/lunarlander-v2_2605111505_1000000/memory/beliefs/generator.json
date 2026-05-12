@@ -1,0 +1,36 @@
+{
+  "agent": "generator",
+  "version": 1,
+  "history": [
+    {
+      "round": "round0",
+      "status": "success",
+      "attempt": 1,
+      "changed_count": 3
+    },
+    {
+      "round": "round1",
+      "status": "success",
+      "attempt": 1,
+      "changed_count": 3
+    },
+    {
+      "round": "round2",
+      "status": "success",
+      "attempt": 1,
+      "changed_count": 3
+    },
+    {
+      "round": "round3",
+      "status": "success",
+      "attempt": 1,
+      "changed_count": 3
+    },
+    {
+      "round": "round4",
+      "status": "success",
+      "attempt": 1,
+      "changed_count": 3
+    }
+  ]
+}

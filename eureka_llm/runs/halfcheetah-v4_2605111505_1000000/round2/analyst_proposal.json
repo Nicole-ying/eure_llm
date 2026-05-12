@@ -1,0 +1,17 @@
+{
+  "diagnosis": "The policy is stuck in a deterministic, low-variance gait with constant forward speed and zero episode length variation, due to exploration collapse in the absence of termination conditions.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 1,
+  "proposed_changes": [
+    {
+      "component": "r_delta",
+      "current_code": "r_delta = max(0.0, forward_vel - self._prev_forward_vel)",
+      "new_code": "r_delta = abs(forward_vel - self._prev_forward_vel)",
+      "reason": "Changing from one-sided (increase-only) to two-sided (absolute difference) reward for speed changes encourages the agent to vary its speed, breaking the local optimum of constant forward velocity without requiring risky states."
+    }
+  ],
+  "predicted_effect": "The agent will begin to vary its forward speed, exploring different gait patterns and velocities. This should lead to higher average forward speed over time as the agent discovers faster gaits, while still maintaining the episode length (no termination). The r_forward component remains dominant, ensuring net forward progress.",
+  "max_risk": "The agent might learn to oscillate speed (accelerate then decelerate repeatedly) to accumulate abs(diff) reward without net forward progress, potentially reducing average forward speed.",
+  "risk_mitigation": "Monitor forward_velocity mean and variance across episodes. If the mean forward speed drops significantly, revert the change or adjust the weight. The r_forward term (scaled by 1.5) still strongly incentivizes positive net speed, so oscillation without forward progress is unlikely. If observed, add a small negative penalty for negative forward_vel or reduce r_delta weight."
+}

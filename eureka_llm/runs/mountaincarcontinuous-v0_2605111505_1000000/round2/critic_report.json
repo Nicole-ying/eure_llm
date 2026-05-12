@@ -1,0 +1,7 @@
+{
+  "status": "needs_revision",
+  "critic_flags": [
+    "High-severity principle violation present: reward_goal_alignment"
+  ],
+  "recommendation": "Address high-severity violations first."
+}

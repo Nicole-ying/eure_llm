@@ -1,0 +1,43 @@
+env_id: HalfCheetah-v4
+total_timesteps: 1000000
+seed: 42
+device: cuda:1
+n_envs: 1
+normalize: true
+max_episode_steps: 1000
+evaluation:
+  freq: 200000
+  episodes: 10
+  deterministic: true
+checkpoint:
+  freq: 200000
+gif_steps:
+- 200000
+- 600000
+- 1000000
+gif_fps: 30
+gif_max_steps: 1200
+ppo:
+  policy: MlpPolicy
+  learning_rate: 2.0633e-05
+  n_steps: 512
+  batch_size: 64
+  n_epochs: 20
+  gamma: 0.98
+  gae_lambda: 0.92
+  clip_range: 0.1
+  ent_coef: 0.000401762
+  vf_coef: 0.58096
+  max_grad_norm: 0.8
+  policy_kwargs: dict(log_std_init=-2, ortho_init=False, activation_fn=nn.ReLU, net_arch=[dict(pi=[256,
+    256], vf=[256, 256])])
+phase3:
+  prompt_policy:
+    perception:
+      max_env_metrics_table: 6
+      max_env_metrics_section: 6
+    analyst:
+      max_lines_markdown: 90
+      max_lines_memory: 70
+    generator:
+      max_lines_markdown: 85

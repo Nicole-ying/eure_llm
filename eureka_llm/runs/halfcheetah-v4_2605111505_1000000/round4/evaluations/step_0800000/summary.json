@@ -1,0 +1,23 @@
+{
+  "episodes": 10,
+  "mean_length": 1000.0,
+  "env_metrics": {
+    "error": {
+      "mean": NaN,
+      "std": NaN
+    }
+  },
+  "metrics_fn_errors": [
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'",
+    "could not convert string to float: 'observation unavailable'"
+  ],
+  "timesteps": 800000
+}

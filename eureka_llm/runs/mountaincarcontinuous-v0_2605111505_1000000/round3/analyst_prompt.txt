@@ -1,0 +1,407 @@
+You are the **Analyst Agent** — the core reasoning engine of a multi-agent reward function design system.
+
+You receive:
+1. **Perception Report** — structured observations about the latest training run
+2. **Current Reward Function** — the code that was just trained
+3. **Task Manifest** — environment description, termination conditions, success criteria
+4. **Cross-Round Memory** — causal lessons from previous iterations
+5. **Recent Round History** — summaries of the last 3 rounds
+
+## Your tools
+
+You have access to these tools. When you want to use one, output:
+
+tool_name: tool_input
+
+### Tool 1: query_memory
+Search cross-round memory for relevant lessons.
+Input: a keyword or question
+Output: matching lessons
+
+### Tool 2: calculate_reward_budget
+Estimate whether the current reward function (or a proposed change) would produce positive net reward for the current agent behavior.
+Input: specific coefficient changes to evaluate
+Output: net reward estimate per step
+
+### Tool 3: compare_rounds
+Compare two specific rounds.
+Input: round numbers X and Y
+Output: summary of differences
+
+### Tool 4: analyze_efficiency
+Analyze action-efficiency coupling from behavior metrics and component stats.
+Input: optional note/question
+Output: efficiency indicators and likely inefficiency pattern
+
+### Tool 5: detect_principle_violation
+Detect possible violations of general reward-design principles from current signals.
+Input: optional note/question
+Output: matched principle violations (alignment, inefficiency, exploration collapse, etc.)
+
+### Tool 6: ask_perception
+Request a targeted follow-up observation from Perception Agent (asynchronous clarification).
+Input: a specific question about metrics/patterns/constraints
+Output: focused perception-side evidence
+
+## Your workflow
+
+You must use a **Thought → Action → Observation → Thought** loop.
+
+Step by step:
+1. **Thought**: Analyze the perception report. What is the key problem?
+2. **Action**: Use a tool to gather more information
+3. **Observation**: What did the tool return?
+4. **Thought**: Interpret the observation. Form a hypothesis.
+5. **Action or Final Answer**: Either gather more info or output your final proposal
+
+## Output format
+
+After your analysis loop, produce a **structured JSON proposal**:
+
+{
+    "diagnosis": "One-sentence summary of the root cause",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
+    "changed_count": <number of changes, max 3>,
+    "proposed_changes": [
+        {
+            "component": "component_name",
+            "current_code": "current line of code",
+            "new_code": "proposed new line of code",
+            "reason": "Why this change fixes the problem"
+        }
+    ],
+    "predicted_effect": "What behavior change do you expect?",
+    "max_risk": "What could go wrong with this change?",
+    "risk_mitigation": "How would we detect or recover from failure?"
+}
+
+## Constraints
+
+- **changed_count ≤ 3**: You can only change at most 3 distinct coefficients or structural elements per round.
+- **One change at a time**: Prefer changing 1-2 things rather than 3. The smallest effective change is best.
+- **Include reward budget**: For each change, explain why the net reward will remain positive.
+- **Never delete metrics_fn**: The generated code MUST always include a metrics_fn function.
+- **Environment ID is always "UnknownEnv"**: Do not infer or mention specific benchmark names.
+- **Prefer principle-based diagnosis**: explicitly tie your diagnosis to at least one general principle (e.g., reward-goal alignment, action efficiency, exploration balance, state coverage, temporal consistency, termination exploitation).
+- **Use relative comparisons**: prefer shares, ratios, trends, and before/after deltas over fixed absolute thresholds whenever possible.
+- **Reference the Task Manifest**: When evaluating behavior, reference the Task Manifest's environment description. Does the behavior match the intended task goal? Flag any metric that deviates from the expected behavior pattern (e.g., body_height dropping, pitch_angle changing sign, abnormal gait indicators).
+
+
+---
+## Current Context
+
+### Current Round: 4
+### Previous Round Results: run_dir = round3
+
+### Task Manifest (excerpt)
+# Task Manifest
+
+## Environment Description
+## Task Goal
+A car is parked at the bottom of a valley. The car's engine is too weak to drive directly up the steep hill. The agent must learn to build momentum by driving back and forth (left and right) to reach the flag at the top of the right hill.
+
+## Termination Analysis
+See step() source for termination conditions.
+
+## Observation Space
+See step() source for observation structure.
+
+## Action Space
+See step() source for action structure.
+
+## Step Source Code
+```python
+def step(self, action: np.ndarray):
+    position = self.state[0]
+    velocity = self.state[1]
+    force = min(max(action[0], self.min_action), self.max_action)
+
+    velocity += force * self.power - 0.0025 * math.cos(3 * position)
+    if velocity > self.max_speed:
+        velocity = self.max_speed
+    if velocity < -self.max_speed:
+        velocity = -self.max_speed
+    position += velocity
+    if position > self.max_position:
+        position = self.max_position
+    if posi
+
+### Perception Report
+# Structured Observation Report
+## 1. Behavior Trend Summary
+| Final Timestep (1M) | Value |
+|---------------------|-------|
+| mean_length         | 99.2  |
+| action_force        | 0.954 |
+| dist_to_goal        | 0.972 |
+| heading             | 0.385 |
+| reached_goal        | 0.0   |
+| velocity_mag        | 0.030 |
+**Trend**: The trajectory is **flat** – no improvement in goal-reaching, no meaningful reduction in distance, and barely any movement. The agent has locked into a low-velocity, constant-throttle strategy.
+## 2. Critical Metrics
+- **dist_to_goal** – Direct measure of task progress. Its near-constant value (~0.97) shows the agent fails to reduce distance to the goal. **Moving in the wrong direction**: slight increase from 0.973 at 800k to 0.972 at 1M is essentially flat, but the overall stagnation is critical.
+- **reached_goal** – The ultimate binary indicator. At 0.0 across all evaluations, the agent never completes the task. **No movement in the right direction**.
+- **velocity_mag** – Should increase to build momentum. It remains extremely low (≈0.03), inconsistent with the high action_force (~0.95). **Cross‑metric pattern**: the ratio `velocity_mag / action_force` is ~0.03, meaning nearly all applied force yields negligible movement – likely because the car is on a slope or the engine is too weak to overcome inertia. This indicates a **local optimum** where the agent pushes forward but cannot accelerate.
+## 3. Reward Component Health
+| Component | Mean | Std | % of Total | Status |
+|-----------|------|-----|------------|--------|
+| _outcome  | 0.422 | 0.906 | 98.1% | Active, dominant, noisy (CV > 1) |
+| r_goal    | 0.007 | 0.005 | 1.7% | Inactive (mean ≈ 0) |
+| r_progress| -0.001 | 0.002 | 0.2% | Inactive (mean ≈ 0) |
+- **Active components**: `_outcome` is the only significantly non-zero component. It is **dominant** (|mean| > 2× the sum of others).
+- **Inactive**: `r_goal` and `r_progress` have mean ≈ 0, providing negligible shaping.
+- **Suspicious values**: `_outcome` has a high mean (0.422) but is **weakly aligned with task progress** – the distance to goal does not decrease, and the goal is never reached. This suggests `_outcome` rewards something other than goal completion (e.g., survival time, staying near a reference point, or a constant per-step bonus). The agent may be exploiting this reward by simply not crashing or terminating early, rather than moving toward the flag.
+## 4. Behavioral Diagnosis
+## 5. TDRQ Diagnosis
+Overall TDRQ = 32.5/100. The low score is driven primarily by **component imbalance** (score 1.85) and **component inactivity** (score 33.33). Exploration health is perfect (100), so the entropy decline is not alarming. The reward **should be iterated** to add meaningful shaping (e.g., distance‑based progress, momentum bonuses) and to reduce the dominance of the `_outcome` component, which is not tied to task completion.
+## 6. Constraint Violations Summary
+Two principles are violated, ranked by urgency:
+1. **Temporal consistency (medium severity)** – The `heading` metric drifted from early mean 0.12 to late mean 0.38 (relative drift 2.13). This indicates the policy’s steering behavior shifted over training, pointing to intra‑policy inconsistency. The agent changed from nearly neutral heading to a rightward bias, but without improving distance – a sign of unstable strategy selection.
+2. **Termination exploitation (medium severity)** – Mean episode length = 93.2, max length = 616, ratio = 0.151. The average length is far below the maximum, suggesting the agent frequently ends episodes early (possibly by crashing or hitting a time limit) rather than continuing to exploit the reward structure. The relatively short average implies the agent may be avoiding longer episodes that require sustained effort.
+## 7. Episode Consistency Summary
+Early (200k) vs. late (1M) behavior shows a clear drift in `heading` (0.12 → 0.38) and a slight increase in `mean_length` (71 → 99). The policy style is **drifting** – the agent becomes more deterministic (entropy 1.17 → 0.91) and commits to a stronger rightward bias. This drift appears **unhealthy** because it does not correlate with progress (distance unchanged). It reflects a narrowing of the policy toward a suboptimal attractor rather than adaptive exploration.
+## 8. Key Numbers for Budget Calculation
+- mean_length: 99.2
+- action_force: 0.953889
+- dist_to_goal: 0.972156
+- heading: 0.385081
+- reached_goal: 0.0
+- velocity_mag: 0.030439
+
+### Current Reward Function
+```python
+"""LLM-generated reward function (round 3).
+Source: round3
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function (round 3).
+Source: round3 - Added direction bias and proximity shaping to fix reward_goal_alignment.
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, position, velocity, action, terminated):
+    """
+    Reward function for MountainCar.
+    
+    Physics: The car must build momentum by oscillating left and right.
+    A weak engine cannot push directly up the hill.
+    
+    Signals:
+    - r_progress: dense reward combining absolute velocity bonus (0.5 * |v|)
+      and action penalty (-0.01 * |action|). Encourages movement and penalises
+      wasteful throttle.
+    - r_direction: signed velocity reward (0.3 * velocity). Gives positive
+      reward for moving right (toward goal) and slight penalty for moving left,
+      breaking symmetry. Coefficient 0.3 is smaller than the absolute velocity
+      coefficient (0.5) to keep leftward movement possible for building momentum.
+    - r_proximity: distance penalty (-0.01 * max(0, 0.5 - position)). Provides
+      a continuous negative gradient toward the goal. Coefficient -0.01 ensures
+      the penalty is smaller than velocity rewards (max -0.017 at farthest point)
+      so it does not dominate.
+    - r_goal: sparse goal bonus (1.0 only when position >= 0.5 and velocity >= 0).
+    - _outcome: evaluation-only flag, not part of the reward total.
+    """
+    # --- Dense components ---
+    # Absolute velocity bonus: 0.5 * |v|, max ~0.035 at max speed (~0.07).
+    # Chosen to be substantially larger than action penalty so movement is preferred.
+    r_velocity = 0.5 * abs(velocity)
+    
+    # Action penalty: -0.01 * |action|, max -0.01 at full throttle.
+    # Discourages wasteful full‑throttle stalls that produce no momentum.
+    action_penalty = -0.01 * abs(action[0])
+    
+    # Signed velocity reward: 0.3 * velocity, max ~0.021 rightward, ~-0.021 leftward.
+    # Introduces directional bias to align reward with goal direction.
+    r_direction = 0.3 * velocity
+    
+    # Proximity penalty: -0.01 * max(0, 0.5 - position).
+    # Distance ranges from 0 (at goal) to ~1.7 (at left edge), so penalty
+    # ranges from 0 to -0.017. Provides shaping signal even when velocity is zero.
+    r_proximity = -0.01 * max(0.0, 0.5 - position)
+    
+    r_progress = r_velocity + action_penalty + r_direction + r_proximity
+    
+    components = {"r_progress": r_progress}
+    
+    # --- Sparse goal component ---
+    if terminated:
+        # Determine success using observation state only (no engine internals)
+        success = (position >= 0.5) and (velocity >= 0.0)
+        components["r_goal"] = 1.0 if success else 0.0
+        components["_outcome"] = 1.0 if success else -1.0
+        total = r_progress + components["r_goal"]   # reward total before _outcome
+    else:
+        components["r_goal"] = 0.0
+        total = r_progress
+    
+    return float(total), components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task‑level metrics independent of the reward.
+    All attributes are accessed with getattr for safety.
+    """
+    # Current observation
+    state = getattr(env, 'state', [0.0, 0.0])
+    position = state[0] if len(state) > 0 else 0.0
+    velocity = state[1] if len(state) > 1 else 0.0
+    
+    # Goal constants (from the environment)
+    goal_position = 0.5
+    goal_velocity = 0.0
+    
+    # Distance remaining to the goal (clipped at 0)
+    distance_to_goal = max(0.0, goal_position - position)
+    
+    # Speed magnitude
+    abs_velocity = abs(velocity)
+    
+    # Action magnitude (force applied)
+    action_force = abs(action[0])
+    
+    # Did the car reach the goal this step?
+    reached_goal = 1.0 if (position >= goal_position and velocity >= goal_velocity) else 0.0
+    
+    # Normalised heading: +1 if moving right, -1 if left, 0 if stopped
+    heading = 0.0
+    if abs_velocity > 1e-6:
+        heading = velocity / abs_velocity
+    
+    return {
+        "dist_to_goal": distance_to_goal,
+        "velocity_mag": abs_velocity,
+        "action_force": action_force,
+        "reached_goal": reached_goal,
+        "heading": heading,
+    }
+
+
+```
+
+### Previous Round's Proposal (what we predicted)
+```json
+{
+  "diagnosis": "The agent is stuck in a local optimum with near-zero velocity and zero goal attainment because the reward signal is extremely weak (mean ~0.006 per step), the signed direction reward penalizes leftward movement essential for building momentum, and the distance gradient is too flat to guide the car up the hill.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "misalignment",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_velocity",
+      "current_code": "r_velocity = 0.5 * abs(velocity)",
+      "new_code": "r_velocity = 2.0 * abs(velocity)",
+      "reason": "Dramatically increase the incentive for movement (both left and right) so the agent learns to build momentum instead of staying still. The old coefficient (0.5) provided only ~0.015 reward at typical speeds, which was too weak to overcome the action penalty and inertia."
+    },
+    {
+      "component": "r_direction",
+      "current_code": "r_direction = 0.3 * velocity",
+      "new_code": "r_direction = 0.0  # removed",
+      "reason": "Eliminate the signed direction reward that penalized leftward movement (negative velocity). This bias prevented the necessary back-and-forth oscillation to build up the kinetic energy needed to climb the hill. Absolute velocity reward already encourages both directions equally."
+    },
+    {
+      "component": "r_proximity",
+      "current_code": "r_proximity = -0.01 * max(0.0, 0.5 - position)",
+      "new_code": "r_proximity = 0.5 * (position + 0.5)",
+      "reason": "Replace the weak negative penalty with a strong positive reward that increases linearly as the car moves right (from 0 at start to 0.5 at the goal). This provides a clear gradient toward the goal without penalizing leftward exploration. The combined effect with the increased velocity reward naturally incentivizes oscillation: moving left builds speed (rewarded by r_velocity), while moving right increases the proximity reward."
+    }
+  ],
+  "predicted_effect": "The agent will learn to oscillate: first moving left to gain velocity, then moving right to collect the rising proximity reward. Over time it will build enough momentum to reach the goal (position ≥ 0.5, velocity ≥ 0), earning the sparse goal bonus. The average episode length will initially decrease as the agent explores, then stabilize upon reaching the goal. The action force will remain high but will be used to effectively modulate speed rather than stalling.",
+  "max_risk": "The proximity reward (0.5 * (position+0.5)) may become negative if the car ever dips below -0.5 (e.g., if the environment's min position is lower). In that case, the agent could be punished for moving further left, potentially inhibiting exploration. However, given the current perception showing positions around -0.47, this is unlikely to be a problem. Another risk is that the large velocity reward (2.0 * |v|) could cause the agent to focus solely on high speed without making net progress toward the goal. The proximity gradient should counteract this by rewarding rightward displacement.",
+  "risk_mitigation": "Monitor the `dist_to_goal` metric in the next perception report. If it does not start trending downward within 200k steps, consider reducing the velocity coefficient to 1.0 or increasing the proximity coefficient to 1.0. If the car overshoots the goal (position > 0.5) due to high speed, the step code already clamps position to max_position, so no risk. Additionally, track the ratio velocity_mag / action_force to ensure the agent is converting force into speed (should rise above 0.1)."
+}
+```
+
+### Recent Round History
+### Round 2
+Reward: """LLM-generated reward function (round 2). """ """LLM-generated reward function (round 2). """     """
+Metrics: completion=?, fall=?, mean_len=999.0
+Perception: ### 1. Behavior Trend Summary | `dist_to_goal` | Direct measure of progress toward the flag; should decrease toward 0 as the car climbs. | **Stuck** (always ~1.0–1.16, no downward trend) | ### 4. Beha
+Lesson: ## Round {N} Reflection  ### Expected
+
+### Round 3
+Reward: """LLM-generated reward function (round 3). """ """LLM-generated reward function (round 3). """     """
+Metrics: completion=?, fall=?, mean_len=99.2
+Perception: ## 1. Behavior Trend Summary **Trend**: The trajectory is **flat** – no improvement in goal-reaching, no meaningful reduction in distance, and barely any movement. The agent has locked into a low-velo
+Lesson: ## Round {N} Reflection  ### Expected
+
+### Round 4
+
+### Cross-Round Lessons (MEMORY.md)
+# Reward Design Memory
+Cross-round causal lessons from reward function iteration. Each line is a single
+compressed lesson: what changed → what happened → why → recommendation.
+**Round 1**: `Velocity bonus too small (0.2*|v|) and constant r_goal=1.0 unchanged → agent learned max-force stall, no momentum | Why: constant reward masked movement incentive; terminal condition fix not applied | Fix: remove constant r_goal entirely, increase velocity coefficient (e.g., 0.5), ensure goal-only terminal bonus`
+**Round 2**: `Removed constant positive baseline but left constant -1 step penalty → agent ignored small velocity bonus and stalled | Why: constant penalty dominated reward; no positive signal strong enough to overcome it | Fix: also remove or condition the step penalty, or increase velocity reward to at least 1.0 to counteract the -1 per step`
+**Round 3**: `Added signed velocity and proximity penalty but _outcome still dominated (98%) → agent drove right monotonically without building momentum | Why: constant _outcome reward dwarfed all new signals, and signed velocity discouraged leftward exploration needed for oscillation | Fix: remove or condition _outcome, increase velocity coefficient to ≥1.0, and add explicit oscillation bonus or negative distance gradient`
+
+### Analyst Persistent Belief State
+```json
+{
+  "recent": [
+    {
+      "round": 1,
+      "diagnosis": "The reward function provides a nearly constant signal (r_progress ≈ 0.39) with no incentive to move, causing the agent to learn a stationary policy that applies maximum force without gaining speed.",
+      "violated_principle": "reward_goal_alignment",
+      "changed_count": 1
+    },
+    {
+      "round": 1,
+      "diagnosis": "The reward function gives a constant high baseline (r_progress ≈ 0.39) with no incentive to move, and a terminal bonus that is incorrectly triggered on timeout (not only on success), allowing the agent to stay stationary and collect reward without ever solving the task.",
+      "violated_principle": "termination_exploitation",
+      "changed_count": 2
+    },
+    {
+      "round": 2,
+      "diagnosis": "Agent is stuck applying maximum force with negligible velocity because the reward function provides a constant positive baseline (r_position ≈ 0.39 + constant r_goal) that masks any incentive to move, leading to reward hacking and no task progress.",
+      "violated_principle": "reward_goal_alignment",
+      "changed_count": 2
+    },
+    {
+      "round": 3,
+      "diagnosis": "The agent is stuck in a local optimum with negligible velocity and zero goal attainment because the reward function provides a direction-agnostic velocity bonus that does not incentivize progress toward the goal, and lacks a dense shaping signal to guide the car up the hill.",
+      "violated_principle": "reward_goal_alignment",
+      "changed_count": 2
+    },
+    {
+      "round": 4,
+      "diagnosis": "The agent is stuck in a local optimum with near-zero velocity and zero goal attainment because the reward signal is extremely weak (mean ~0.006 per step), the signed direction reward penalizes leftward movement essential for building momentum, and the distance gradient is too flat to guide the car u",
+      "violated_principle": "reward_goal_alignment",
+      "changed_count": 3
+    }
+  ]
+}
+```
+
+---
+## Begin Your Analysis
+
+Use the Thought → Action → Observation loop.
+
+**Thought:** What is happening? What is the key problem?
+**Action:** query_memory | calculate_reward_budget | compare_rounds | analyze_efficiency | detect_principle_violation | ask_perception
+**Observation:** Tool output
+
+When you have enough information, output your FINAL ANSWER as a JSON proposal:
+
+```json
+{
+    "diagnosis": "...",
+    "violated_principle": "reward_goal_alignment | action_efficiency | exploration_balance | state_coverage | temporal_consistency | termination_exploitation | none",
+    "root_cause_category": "overconstrained | underconstrained | reward_hacking | inactive_component | inefficiency | misalignment | exploration_collapse | other",
+    "changed_count": <1-3>,
+    "proposed_changes": [...],
+    "predicted_effect": "...",
+    "max_risk": "...",
+    "risk_mitigation": "..."
+}
+```
+
+CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
+metrics_fn MUST be present in the generated code.

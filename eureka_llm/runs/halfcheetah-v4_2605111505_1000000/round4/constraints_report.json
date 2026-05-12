@@ -1,0 +1,14 @@
+{
+  "violations": [
+    {
+      "principle": "state_coverage",
+      "severity": "medium",
+      "evidence": {
+        "mean_length_min": 1000.0,
+        "mean_length_max": 1000.0
+      },
+      "diagnosis": "Episode lengths are concentrated in a narrow range; policy may be locked into a repetitive local optimum."
+    }
+  ],
+  "count": 1
+}

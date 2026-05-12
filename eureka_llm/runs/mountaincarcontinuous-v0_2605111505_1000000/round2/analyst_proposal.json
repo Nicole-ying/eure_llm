@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The agent is stuck in a local optimum with negligible velocity and zero goal attainment because the reward function provides a direction-agnostic velocity bonus that does not incentivize progress toward the goal, and lacks a dense shaping signal to guide the car up the hill.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "inefficiency",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "compute_reward - r_direction",
+      "current_code": "Not present (no direction bias in velocity reward)",
+      "new_code": "r_direction = 0.3 * velocity",
+      "reason": "Introduces a signed velocity component that gives positive reward for moving right (toward the goal) and small reward for moving left, breaking the symmetry that allowed the agent to oscillate without making progress. The coefficient 0.3 is chosen to be smaller than the absolute velocity coefficient (0.5) so leftward movement remains possible but less rewarding than rightward movement, preserving the ability to build momentum by backing up."
+    },
+    {
+      "component": "compute_reward - r_proximity",
+      "current_code": "Not present (no distance-based shaping)",
+      "new_code": "r_proximity = -0.01 * max(0.0, 0.5 - position)",
+      "reason": "Adds a small stepwise penalty proportional to the distance remaining to the goal. This provides a continuous negative gradient that pushes the agent to reduce distance, even when velocity is zero. The coefficient -0.01 is calibrated to be smaller than the velocity rewards so it does not dominate but still provides a useful shaping signal."
+    }
+  ],
+  "predicted_effect": "The agent will learn to move right (high reward from signed velocity) and will also be driven to decrease the distance to the goal due to the proximity penalty. This should break the stationary oscillation behavior and gradually climb the hill. Initially, the per-step reward may become slightly negative when far from the goal, encouraging the agent to accelerate towards the goal to turn the cumulative reward positive.",
+  "max_risk": "The signed velocity component may discourage leftward movement too strongly, preventing the agent from learning the necessary back-and-forth oscillation to build momentum. The agent could get stuck at the bottom of the right hill, unable to overcome the steep slope because it never goes left to gain kinetic energy.",
+  "risk_mitigation": "Monitor the heading and velocity_mag trends. If the agent still fails to reach the goal after a reasonable number of training steps (e.g., 500k steps), consider reducing the signed velocity coefficient (e.g., from 0.3 to 0.1) or adding a small bonus for absolute velocity regardless of direction to encourage exploration. Also, if the agent stops moving (velocity near zero), increase the action penalty to force it to act."
+}

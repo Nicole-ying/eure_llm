@@ -1,5 +1,0 @@
-timesteps,completion_rate,fall_rate,truncation_rate,mean_length,env_metrics
-200000,1.0,0.0,0.0,1000.0,{}
-400000,1.0,0.0,0.0,1000.0,{}
-600000,1.0,0.0,0.0,1000.0,{}
-800000,1.0,0.0,0.0,1000.0,{}

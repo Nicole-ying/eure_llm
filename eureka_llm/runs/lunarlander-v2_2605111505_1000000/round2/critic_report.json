@@ -1,0 +1,10 @@
+{
+  "status": "needs_revision",
+  "critic_flags": [
+    "Proposal changes too many items; risk of unstable credit assignment.",
+    "High-severity principle violation present: reward_goal_alignment",
+    "High-severity principle violation present: reward_goal_alignment",
+    "High-severity principle violation present: reward_goal_alignment"
+  ],
+  "recommendation": "Address high-severity violations first."
+}

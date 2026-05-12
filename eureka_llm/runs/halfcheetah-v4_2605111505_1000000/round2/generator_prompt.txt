@@ -1,0 +1,245 @@
+You are the **Generator Agent** — an AI that translates structured proposals into correct, runnable Python code.
+
+You receive:
+1. **Analyst Proposal** — structured JSON with proposed changes
+2. **Current Reward Function** — the code to modify
+3. **Perception Report** — detailed behavior analysis from the perception agent
+4. **Environment Constraints** — auto-derived rules about the environment physics
+5. **Task Manifest** — environment description with step() source
+
+## Instructions
+
+Generate a complete, valid Python module with two functions:
+
+### def compute_reward(self, action) -> tuple[float, dict]
+- Apply the exact changes specified in the Analyst Proposal
+- If `violated_principle` is present, ensure code modifications explicitly address that principle.
+- Keep all unchanged components exactly as they are
+- Every constant must have a comment justifying its magnitude
+- Must return (total_reward, components_dict)
+
+### def metrics_fn(env, action) -> dict
+- MUST be present (this is required!)
+- 3-6 task-level metrics independent of the reward
+- **Find attributes from step() source**: Look at the step() source code from the Task Manifest. Every `self.xxx = ...` in step() becomes `env.xxx` in metrics_fn. Do NOT guess attribute names not seen there.
+- **Access all attributes safely**: Use `getattr(env, 'attr_name', fallback_value)` for every attribute access. Never let a single failed lookup crash the whole function.
+- Use getattr(env, '_pre_step_state', {}) for cross-step values
+- Do NOT return reward components
+- Do NOT just return raw observation readings
+- Each metric must measure actual task performance
+
+## CRITICAL RULES (do not violate)
+
+1. **No simulator object storage**: Never store environment-internal objects (physics bodies, joints, handles, etc.) as instance attributes. These cannot be pickled when using parallel environments. Store only plain Python values (float, int, np.ndarray).
+
+2. **All imports inside functions**: Put `import math`, `import numpy as np` at the top of the file.
+
+3. **metrics_fn is MANDATORY**: The module must define `metrics_fn`. If there isn't one in the current reward function, create one using the step() source for guidance.
+
+4. **Component naming**: Use concise names like `r_progress`, `r_stability`, `r_efficiency`, `r_penalty`.
+
+5. **Component scaling**: All dense components should produce values within the same order of magnitude (within 5× of each other).
+
+6. **Return type**: Must return `(float, dict)`.
+
+7. **Termination outcome signal (`_outcome`)**: When `terminated=True`, the `components` dict MUST include a reserved `_outcome` key for evaluation:
+   - `components["_outcome"] = 1.0` for success
+   - `components["_outcome"] = -1.0` for crash/failure
+   - `components["_outcome"] = 0.0` for neutral/ambiguous
+   - CRITICAL: `total = sum(components.values())` BEFORE adding _outcome. Then add _outcome to the dict only — do NOT add or subtract _outcome from total. _outcome must NOT affect the reward gradient.
+   - Do NOT include `_outcome` when `terminated=False`
+   - Determine success/failure using ONLY observation state (positions, velocities, angles, contacts), NOT `awake`/`sleeping` attributes
+
+8. **Signature lock**:
+   - Keep `compute_reward` argument list compatible with the target env's `step.py` callsite.
+   - Use exact `def metrics_fn(env, action) -> dict:` signature.
+   - `metrics_fn` must return scalar floats/ints only; no Box2D objects.
+
+9. **No hidden-state internals for success**:
+   - Do NOT use `awake`/sleep state or engine internals for `_outcome` logic.
+   - Use only positions, velocities, angles, contacts, and termination flags.
+
+If a requested proposal conflicts with these rules, keep these rules and minimally adapt the proposal.
+When resolving conflicts, prioritize principle-consistent behavior over ad-hoc coefficient patching.
+
+Output only one complete ```python block.
+
+
+## Current Reward Function
+```python
+"""LLM-generated reward function (round 1).
+Source: round1
+"""
+
+import math
+import numpy as np
+
+"""LLM-generated reward function.
+Source: round0, modified per analyst proposal (reduced smoothness penalty weight).
+"""
+
+import math
+import numpy as np
+
+def compute_reward(self, obs, action, terminated, truncated, info):
+    """
+    Primary dynamics: forward propulsion via leg actuation.
+    The dominant physical process is the conversion of joint torques into horizontal movement
+    while maintaining balance on a flat plane. Since there is no gravity-induced failure,
+    the agent can stand still indefinitely, so the reward must actively drive forward motion.
+    The simplest learnable signal is the body's forward velocity, which directly reflects
+    task progress. A smoothness penalty prevents erratic movements that waste energy without
+    contributing to speed.
+    """
+    import numpy as np
+
+    # Initialize cross-step state if needed
+    if not hasattr(self, '_step_count'):
+        self._prev_action = np.zeros(6)   # first step: assume zero previous action
+        self._step_count = 0
+    self._step_count += 1
+
+    # Extract forward velocity from observation.
+    # Based on typical HalfCheetah-v2 observation order (index 8 = x velocity).
+    # If actual environment differs, this line would be adjusted.
+    forward_vel = obs[8]  # shape: scalar
+
+    # Reward component 1: forward velocity (primary task signal)
+    r_forward = forward_vel  # no scaling; typical range under random policy is ~ [-10, 10]
+    # We do not clip; raw velocity gives a clean gradient.
+
+    # Reward component 2: action smoothness penalty (encourage smooth, efficient actuation)
+    # Weight 0.001: reduced from 0.01 to reduce penalty magnitude, encouraging faster forward speed.
+    # The penalty is small enough not to dominate r_forward, but still discourages erratic jerks.
+    action_delta = action - self._prev_action
+    r_smooth = -0.001 * np.sum(action_delta ** 2)  # weight 0.001: avoids suppressing needed motion
+    self._prev_action = action.copy()  # store for next step
+
+    components = {
+        "r_forward": r_forward,
+        "r_smooth": r_smooth,
+    }
+    total = sum(components.values())
+
+    # Terminal outcome (for evaluation only) – not added to total reward
+    if terminated:
+        # No early termination possible (all episodes truncated), so outcome is neutral.
+        components["_outcome"] = 0.0
+
+    return total, components
+
+
+def metrics_fn(env, action) -> dict:
+    """
+    Task-level metrics independent of reward.
+    Collects key performance indicators for the HalfCheetah running task.
+    """
+    import numpy as np
+
+    # Safely access observation from env (assumes env has obs after step)
+    obs = getattr(env, 'obs', None)
+    if obs is None:
+        # Fallback: try env.base_env.obs (if wrapped)
+        base = getattr(env, 'base_env', None)
+        if base is not None:
+            obs = getattr(base, 'obs', None)
+        if obs is None:
+            return {"error": "observation unavailable"}
+
+    # Assume HalfCheetah observation indices (common for 17-dim version):
+    # 0: torso height, 8: x velocity, 10: torso angular velocity, 12-16: joint velocities (if needed)
+    forward_vel = obs[8] if len(obs) > 8 else 0.0
+    torso_ang_vel = obs[10] if len(obs) > 10 else 0.0
+
+    # Action magnitude (mean absolute torque)
+    action_mag = float(np.mean(np.abs(action)))
+
+    # Action smoothness (mean absolute change from previous action)
+    # Use stored previous action from env if available
+    prev_action = getattr(env, '_prev_action', np.zeros_like(action))
+    action_delta = action - prev_action
+    action_smoothness = float(np.mean(np.abs(action_delta)))
+
+    # Approximate forward power (velocity * action magnitude) – not a reward, but useful metric
+    forward_power = forward_vel * action_mag if abs(forward_vel) > 0.01 else 0.0
+
+    return {
+        "forward_velocity": float(forward_vel),
+        "torso_angular_velocity": float(torso_ang_vel),
+        "action_magnitude": action_mag,
+        "action_smoothness": action_smoothness,
+        "forward_power": forward_power,
+    }
+
+
+
+```
+
+## Analyst Proposal
+```json
+{
+  "diagnosis": "The policy has converged to a local optimum where it runs forward at a constant slow speed (forward_vel ~1.25) without improving speed or exploring diverse gaits, resulting in zero variance in episode length and state coverage collapse.",
+  "violated_principle": "exploration_balance | state_coverage",
+  "root_cause_category": "exploration_collapse",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "new component: r_delta (velocity gradient bonus)",
+      "current_code": "(Not present)",
+      "new_code": "if not hasattr(self, '_prev_forward_vel'):\n    self._prev_forward_vel = obs[8]\nforward_vel = obs[8]\nr_delta = max(0, forward_vel - self._prev_forward_vel)  # reward only when speed increases\nself._prev_forward_vel = forward_vel",
+      "reason": "Encourages acceleration beyond the current plateau, breaking the local optimum by rewarding exploratory speed increases."
+    },
+    {
+      "component": "r_forward (scaling coefficient)",
+      "current_code": "r_forward = forward_vel  # no scaling",
+      "new_code": "r_forward = 1.5 * forward_vel  # increased pressure to achieve higher absolute speed",
+      "reason": "Stronger direct reward for high forward velocity increases the gradient toward faster gaits, complementary to the velocity gradient bonus."
+    }
+  ],
+  "predicted_effect": "The agent will start to accelerate beyond the current constant speed, leading to higher forward velocities over time, increased variance in episode metrics, and better state-space coverage (e.g., earlier termination if it falls at high speed, which would be informative).",
+  "max_risk": "The agent might learn to oscillate speed (alternately accelerate and decelerate) to collect gradient bonuses, or it might become unstable at high speeds and fall early, reducing episode length.",
+  "risk_mitigation": "Monitor forward_velocity variance and episode length in the next round. If episode length drops significantly while velocity variance stays high, consider adding a penalty for sudden deceleration or a minimum speed floor. The gradient bonus's max(0, *) already prevents rewarding oscillations because deceleration yields zero reward."
+}
+```
+
+## Task Manifest (excerpt)
+# Task Manifest
+## Environment Description
+## Task Goal
+## Termination Analysis
+See step() source for termination conditions.
+## Observation Space
+See step() source for observation structure.
+## Action Space
+## Step Source Code
+
+## Perception Report (for context)
+### 1. Behavior Trend Summary
+- At each evaluation milestone, the episode length (`mean_length`) remains constant at 1000.0 steps across all checkpoints (200k, 400k, 600k, 800k, 1M timesteps). No improvement or regression in episode duration is observed.
+- The policy consistently generates episodes of the maximum possible length (1000 steps), suggesting that the agent never fails early (e.g., falls or stops moving). The reward component `r_forward` is positive (mean 1.25), so the agent is moving forward, but the lack of forward velocity or other task-level metrics prevents direct assessment of speed improvements.
+- **Key numbers (final timestep):** mean_length = 1000.0, error = nan.
+### 2. Critical Metrics
+Only `mean_length` and `error` (NaN) are available as evaluation metrics. No forward speed or posture metrics were collected.
+- **mean_length** – Indicates episode duration. Constant maximum length (1000) suggests the agent avoids termination conditions (e.g., falling or exceeding time limit). This is a positive sign for stability, but also hints at a lack of behavioral diversity.
+- **error (nan)** – Not a meaningful metric in this context.
+- **No other task-level metrics** – Absence of direct forward velocity or gait quality measures makes it impossible to fully assess task progress.
+**Cross-metric pattern:** The `length_utilization_ratio` is 1.0 and `mean_length_span_ratio` is 0.0, meaning all episodes have identical length with no variation – a sign of behavioral stagnation.
+### 3. Reward Component Health
+- **Active components:** Only `r_forward` (mean = 1.2538, std = 0.4974) is significantly non-zero. It contributes 99.3% of total reward.
+- **Dominant components:** `r_forward` dominates (>80% of total). Its mean is >130× that of `r_smooth`.
+- **Inactive/negligible components:** `r_smooth` has mean ≈ -0.0093 (near zero) and very low std, effectively inactive.
+- **Suspicious means:** `r_smooth` is persistently near zero across all evaluations, indicating it provides no meaningful gradient.
+- **High mean but weak alignment:** `r_forward` has a strong mean value, but there is no external forward velocity metric to verify alignment. The constant episode length suggests the agent is fulfilling forward motion, but the absence of velocity data leaves this unconfirmed.
+### 4. Behavioral Diagnosis
+### 5. TDRQ Diagnosis
+### 6. Constraint Violations Summary
+- **State Coverage Violation (medium urgency):** Episode lengths are perfectly concentrated (min = max = 1000, span_ratio = 0.0). The policy never explores different durations or failure modes, indicating a severe lack of state-space coverage. This is the most urgent issue.
+- No other principles are explicitly violated (no early termination, no reward hacking indicators beyond the imbalance).
+### 7. Episode Consistency Summary
+### 8. Key Numbers for Budget Calculation
+- mean_length = 1000.0
+- error = nan (no usable value)
+
+## Environment Constraints
+- **No gravity detected**: Zero-action episodes survive to timeout. The agent can remain idle indefinitely. Focus reward on active task progress, not survival.
+- **High-dim action space** (6 continuous dims): Different dimensions likely control different effectors. A uniform energy penalty on ALL dimensions may penalize necessary movements. Prefer penalizing action smoothness (delta from previous step) rather than raw action magnitude.

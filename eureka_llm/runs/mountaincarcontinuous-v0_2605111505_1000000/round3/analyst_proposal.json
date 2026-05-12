@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The agent is stuck in a low-velocity stall because the reward signal is negligible (mean ~0.006), with a signed direction reward penalizing leftward movement needed for oscillation, and a velocity bonus too weak to overcome inertia.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "underconstrained",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_velocity",
+      "current_code": "r_velocity = 0.5 * abs(velocity)",
+      "new_code": "r_velocity = 2.0 * abs(velocity)",
+      "reason": "Dramatically increase the incentive for movement in both directions. The old coefficient (0.5) gave only ~0.015 at current speeds, which was too weak to overcome the action penalty and inertia. A coefficient of 2.0 raises the reward to ~0.06 for current velocity, making movement clearly beneficial."
+    },
+    {
+      "component": "r_direction",
+      "current_code": "r_direction = 0.3 * velocity",
+      "new_code": "r_direction = 0.0  # removed",
+      "reason": "Remove the signed direction reward that penalized leftward movement (negative velocity). The agent must be able to move left freely to build momentum for the oscillation strategy. Absolute velocity reward already encourages both directions equally."
+    }
+  ],
+  "predicted_effect": "The agent will start oscillating left and right to build momentum, leading to increasing velocity and eventual goal reaching. Total reward will jump from ~0 to ~0.04 per step initially, and will grow as velocity increases. The average episode length will initially decrease as exploration intensifies, then stabilize upon consistent goal achievement. The action_force will remain high but will be used to modulate speed effectively (velocity_mag/action_force ratio should rise from 0.03 to >0.1).",
+  "max_risk": "The agent might fall into a shallow oscillation loop where it builds moderate speed but never reaches the goal (position ≥ 0.5, velocity ≥ 0). Without a strong goal-directed signal, the sparse goal bonus (1.0) might not be sufficient to overcome the habitual oscillation. The remaining distance penalty (-0.01 per unit distance) is too weak to strongly steer the policy toward the goal.",
+  "risk_mitigation": "Monitor `dist_to_goal` in the next perception report. If it does not trend downward within 200k steps, consider either: (1) increasing the distance penalty coefficient to -0.05 or -0.1, or (2) adding a small positive reward proportional to position (e.g., 0.1 * (position + 0.5)) to provide a stronger gradient toward the goal. Also track the `velocity_mag` trend to ensure it grows beyond 0.1."
+}

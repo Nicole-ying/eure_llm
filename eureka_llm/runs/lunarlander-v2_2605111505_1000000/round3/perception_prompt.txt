@@ -1,0 +1,136 @@
+You are a **Perception Agent** — an AI that observes raw training data and produces concise, structured reports.
+
+Your job is to look at training results and answer: **"What actually happened? What is the agent doing?"**
+
+You do NOT propose changes to the reward function. You do NOT write code. You only observe and describe.
+
+## Task Context
+
+## Task Goal
+Control a lunar lander to land safely on a designated landing pad between two flags. The lander must manage its horizontal position, vertical velocity, angle, and leg contact to achieve a gentle touchdown.
+
+## Training Data
+
+### Evaluation Metrics
+| timesteps | mean_length | angle_abs | dist_to_pad | height | legs_ground | survival_fraction | vert_speed_abs |
+|---|---|---|---|---|---|---|---|
+| 200000 | 715.9 | 0.082916 | 9.168998 | 151.566528 | 0.0 | 0.0 | 28.983214 |
+| 400000 | 1000.0 | 0.053409 | 9.466285 | 21.723282 | 0.0 | 0.0 | 0.989089 |
+| 600000 | 1000.0 | 0.048921 | 8.079788 | 18.209466 | 0.0 | 0.0 | 0.795368 |
+| 800000 | 1000.0 | 0.045233 | 9.686387 | 8.399782 | 0.0 | 0.0 | 0.195222 |
+| 1000000 | 981.1 | 0.029918 | 10.25584 | 2.544242 | 0.921007 | 0.0 | 0.487129 |
+
+### Reward Component Attribution
+| Component | Mean | Std | Type |
+|-----------|------|-----|------|
+| _outcome | -0.933086 | 0.359655 | step-level |
+| r_alive | 0.462667 | 0.035199 | step-level |
+| r_crash_penalty | -1.0 | 0.0 | step-level |
+| r_landing_bonus | 20.0 | 0.0 | step-level |
+| r_legs | 0.024452 | 0.043856 | step-level |
+| r_proximity | 0.161818 | 0.02763 | step-level |
+| r_stability | -0.022499 | 0.01567 | step-level |
+
+### Per-Step Environment Metrics (from training trajectory)
+| Metric | Mean | Std | Frequency |
+|--------|------|-----|-----------|
+*(not available — training env_metrics collection requires MetricsTrackingWrapper)*
+
+### Training Dynamics (Component Balance & Stability)
+### Component Balance & Stability
+| Component | Mean | Std | % of Total | Stability | Status |
+|-----------|------|-----|------------|-----------|--------|
+| _outcome | -0.9331 | 0.3597 | 4.1% | stable | active |
+| r_alive | 0.4627 | 0.0352 | 2.0% | stable | active |
+| r_crash_penalty | -1.0000 | 0.0000 | 4.4% | stable | active |
+| r_landing_bonus | 20.0000 | 0.0000 | 88.5% | stable | DOMINANT |
+| r_legs | 0.0245 | 0.0439 | 0.1% | noisy | active |
+| r_proximity | 0.1618 | 0.0276 | 0.7% | stable | active |
+| r_stability | -0.0225 | 0.0157 | 0.1% | variable | active |
+
+**Summary:** 7/7 components active, 1 dominant (>80%), 1 noisy (CV>1.5).
+**Warning:** A single component dominates. The agent may be optimizing for one objective while ignoring others.
+
+### Policy Entropy Trend
+*(not collected — entropy tracking added in training dynamics update)*
+
+### TDRQ Index (Training-Dynamics Reward Quality)
+| TDRQ | Score |
+|------|-------|
+| overall | 50.18 / 100 |
+| component_balance | 11.52 |
+| component_activity | 100.00 |
+| exploration_health | 50.00 |
+
+Interpretation: <40 = unhealthy reward dynamics, 40-70 = mixed, >70 = healthy.
+
+### Constraint Discovery (Algorithmic, Non-LLM)
+| Principle | Severity | Evidence | Diagnosis |
+|-----------|----------|----------|-----------|
+| reward_goal_alignment | high | component=r_crash_penalty, mean=-1.0, std=0.0 | Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal. |
+| reward_goal_alignment | high | component=r_landing_bonus, mean=20.0, std=0.0 | Reward component has strong constant offset with near-zero variance; can be harvested without informative learning signal. |
+| temporal_consistency | medium | metric=legs_ground, early_mean=0.0, late_mean=0.307, relative_drift=307002.3333 | Behavior metric shifted strongly between early and late training windows; intra-policy dynamics may be inconsistent. |
+| termination_exploitation | medium | length_mean=479.6, length_max=1997, ratio=0.24 | Average episode length is far below observed max; agent may be exploiting early termination dynamics. |
+
+### Action-Metrics Cross Analysis
+| Metric | Value |
+|--------|-------|
+| length_utilization_ratio | 0.24016 |
+| mean_length_span_ratio | 0.2841 |
+
+### Episode Consistency Diagnostics
+| Metric | Value |
+|--------|-------|
+| drift_dominant_metric | legs_ground |
+| early_late_consistency_score | 0.0 |
+| early_late_relative_drift | 307002.333333 |
+
+### Trajectory Summary
+- Episodes logged: 2072
+- Episode length: mean=479.6, min=56, max=1997
+
+## Instructions
+
+Produce a structured markdown report with these sections:
+
+### 1. Behavior Trend Summary
+- At each evaluation milestone, what is the policy doing in state/action space?
+- Is the trajectory improving, regressing, or flat?
+- Key numbers: mean_length and the most important task-level metrics at final timestep
+
+### 2. Critical Metrics
+- List the 3 most important task-level metrics and explain **why** they are important (impact on progress + cross-metric consistency)
+- Flag any metric that is moving in the wrong direction
+- Include at least one **cross-metric pattern** (ratio/correlation/consistency).
+
+### 3. Reward Component Health
+- Which components are active (mean significantly non-zero)?
+- Which components are dominant (|mean| > 2× others)?
+- Which are inactive/negligible (mean ≈ 0 or std ≈ 0)?
+- Is any component's mean value suspicious (e.g., persistently near-zero across evaluations)?
+- Check if any component has **high mean but weak alignment** with task progress metrics
+
+### 4. Behavioral Diagnosis (1-2 sentences)
+- In plain language, what is the agent's current strategy?
+- Is it reward hacking? Stuck in a local optimum? Making genuine progress?
+- Include one sentence on **efficiency** using relative terms (high effort/low gain or low effort/high gain).
+- Compare observed behavior against the Task Context above. Does the agent's strategy match the intended task goal? Flag any patterns inconsistent with the task description (e.g., abnormal posture, inefficient gaits, unexpected metric correlations).
+
+### 5. TDRQ Diagnosis
+- Explain whether low TDRQ is mainly from imbalance, inactivity, or exploration collapse
+- Give one sentence on whether this reward should be iterated, diversified (search/population), or kept
+
+### 6. Constraint Violations Summary
+- Summarize which general principles are currently violated (if any), and rank them by urgency
+- Use relative language (dominant share, trend, ratio, concentration), not absolute fixed judgments
+
+### 7. Episode Consistency Summary
+- Compare early vs late behavior signals and state whether policy style is consistent or drifting
+- Explain if drift appears healthy adaptation or unstable policy behavior
+
+### 8. Key Numbers for Budget Calculation
+Extract numerical metrics from the Evaluation Metrics table for use in reward budget analysis:
+- mean_length
+- All task-level metrics listed in the Evaluation Metrics table
+
+Output ONLY the report. No code. No proposals.

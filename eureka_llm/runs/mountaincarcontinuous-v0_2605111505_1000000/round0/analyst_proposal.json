@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The reward function gives a constant high baseline (r_progress ≈ 0.39) with no incentive to move, and a terminal bonus that is incorrectly triggered on timeout (not only on success), allowing the agent to stay stationary and collect reward without ever solving the task.",
+  "violated_principle": "termination_exploitation",
+  "root_cause_category": "misalignment",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "r_progress",
+      "current_code": "r_progress = (position - (-1.2)) / 1.8   # ~0.39 at start, ~1.0 at goal",
+      "new_code": "r_progress = (position - (-1.2)) / 1.8 + 0.2 * abs(velocity)   # encourage movement to build momentum",
+      "reason": "Adding a small velocity bonus breaks the stationary deadlock. The agent now receives positive reward whenever it moves, creating a gradient that drives exploration and momentum accumulation – a necessary step toward the classic back-and-forth strategy."
+    },
+    {
+      "component": "terminal bonus condition",
+      "current_code": "if terminated:\n    r_goal = 1.0\n    components[\"r_goal\"] = r_goal\n    components[\"_outcome\"] = 1.0\n    total = r_progress + r_goal",
+      "new_code": "if terminated and position >= 0.5 and velocity >= 0:\n    r_goal = 1.0\n    components[\"r_goal\"] = r_goal\n    components[\"_outcome\"] = 1.0\n    total = r_progress + r_goal",
+      "reason": "Prevents exploitation of timeout terminations. Previously the agent received a +1 bonus for simply surviving until the episode ended (whether success or timeout). Now the terminal bonus is only awarded when the car actually reaches the goal (position ≥ 0.5 and velocity ≥ 0), aligning reward with the true objective."
+    }
+  ],
+  "predicted_effect": "The agent will start moving (left or right) to collect the velocity bonus. Initially it may oscillate or drift, but the combined position + speed reward provides a clear drive to increase speed. The termination exploitation is eliminated, so the agent can no longer collect reward by waiting. Over time it should learn to build momentum and eventually reach the goal.",
+  "max_risk": "Rewarding absolute velocity equally for left and right could lead to a symmetric strategy where the agent moves back and forth in the valley without ever climbing. However, the position component still provides a gradient toward the right goal, so the overall optimum should be reaching the flag. Another risk: if the velocity bonus is too large relative to position, the agent might prefer high-speed oscillations over progress; this is unlikely because the velocity bonus is at most 0.014 while position baseline is 0.39.",
+  "risk_mitigation": "Monitor dist_to_goal and heading trends. If dist_to_goal stops decreasing while velocity_mag remains high, the agent may be oscillating without progress. In that case, a small penalty for low position increase (e.g., -0.05 if velocity < 0.01) could be added in a later round. Also track reached_goal; zero after extended training would indicate failure of the fix."
+}

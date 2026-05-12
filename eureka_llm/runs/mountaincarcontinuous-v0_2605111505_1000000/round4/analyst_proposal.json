@@ -1,0 +1,23 @@
+{
+  "diagnosis": "The _outcome terminal penalty (-1) dominates the reward signal (~97% of magnitude), forcing the agent to prioritize episode length over task progress — it jitters with high force but negligible net velocity to avoid termination while collecting a tiny positive dense reward.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "reward_hacking",
+  "changed_count": 2,
+  "proposed_changes": [
+    {
+      "component": "_outcome",
+      "current_code": "components[\"_outcome\"] = 1.0 if success else -1.0",
+      "new_code": "components[\"_outcome\"] = 0.0  # removed from training signal to prevent domination",
+      "reason": "The _outcome penalty (mean -0.99, 96.8% of total) has been the persistent root cause across 4 rounds — it drowns out all shaping signals and forces the agent to maximize episode length rather than solve the task. Setting it to 0.0 ensures it cannot affect the optimization target."
+    },
+    {
+      "component": "r_velocity",
+      "current_code": "r_velocity = 2.0 * abs(velocity)",
+      "new_code": "r_velocity = 5.0 * abs(velocity)",
+      "reason": "With _outcome removed, the dense reward becomes the primary signal. Increasing the velocity coefficient from 2.0 to 5.0 makes movement 2.5x more rewarding (0.35/step at max speed vs. 0.14 currently), providing a strong gradient to pull the agent out of the low-velocity jitter local optimum and incentivize building momentum through back-and-forth oscillation."
+    }
+  ],
+  "predicted_effect": "The agent will begin moving with higher velocity (targeting at least 0.05–0.07) and exploring both leftward and rightward directions, gradually building momentum. The episode length may decrease as the agent learns to climb the hill, and dist_to_goal should trend downward from ~0.96 toward 0.0. Goal attainment should appear within 5–10 evaluation checkpoints.",
+  "max_risk": "If _outcome was actually NOT being included in training (and the perception interpretation was wrong), removing it has no negative effect. However, increasing the velocity coefficient to 5.0 might cause the agent to overshoot or oscillate at high speed without making net progress toward the goal (reward hacking the absolute velocity without direction awareness).",
+  "risk_mitigation": "Monitor velocity_mag and dist_to_goal together: if velocity_mag rises above 0.05 but dist_to_goal does not decrease (or increases), the agent is hacking the velocity bonus without moving toward the goal. In that case, add a small direction bonus or re-introduce a signed velocity component. The first evaluation checkpoint at 200K steps will reveal the trend within 2–3 hours of training."
+}

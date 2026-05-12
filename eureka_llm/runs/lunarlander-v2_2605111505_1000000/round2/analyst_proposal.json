@@ -1,0 +1,29 @@
+{
+  "diagnosis": "The agent hovers at ~11.5 units above the pad far from center, never landing, because the constant alive bonus per step (+0.12) makes staying aloft equally rewarding as descending, and the large crash penalty (−10) makes any attempt to land extremely risky, while the weak horizontal penalty (−0.05×dist) does not provide enough gradient to move toward the pad.",
+  "violated_principle": "reward_goal_alignment",
+  "root_cause_category": "misalignment",
+  "changed_count": 3,
+  "proposed_changes": [
+    {
+      "component": "r_alive",
+      "current_code": "r_alive = 0.12",
+      "new_code": "r_alive = 0.5 * max(0, 1.0 - state[1]/15.0)",
+      "reason": "Replace constant alive bonus with a height‑dependent reward that strongly incentivizes descending below 15 units. At the current hover height (11.55) it gives ~0.115; at lower altitudes it rises to 0.5, creating a clear gradient toward the ground."
+    },
+    {
+      "component": "r_crash_penalty",
+      "current_code": "components[\"r_crash_penalty\"] = -10.0",
+      "new_code": "components[\"r_crash_penalty\"] = -1.0",
+      "reason": "Reduce the crash penalty from −10 to −1 to lower the risk aversion that currently prevents the agent from attempting to land. With a crash penalty of −1, the expected value of a landing attempt becomes positive as long as the success probability exceeds ~5% (vs. ~33% before), encouraging exploration of touchdown maneuvers."
+    },
+    {
+      "component": "w_x",
+      "current_code": "w_x = 0.05",
+      "new_code": "w_x = 0.1",
+      "reason": "Double the horizontal distance penalty weight to provide a stronger per‑step incentive for the agent to reduce its horizontal offset. At the current dist_to_pad of 10.21, the penalty rises from −0.51 to −1.02, making hovering far from the pad substantially worse and pushing the agent to move laterally toward the landing target."
+    }
+  ],
+  "predicted_effect": "The agent will begin to descend further (since staying at altitude yields lower reward) and simultaneously move horizontally toward the pad (stronger lateral penalty). As it gets low and close, it will attempt to land because the crash penalty is now small enough that the expected value of landing becomes positive. Successful landings will be rewarded with +20, making them the global optimum. The agent should achieve non‑zero survival_fraction and leg ground contacts within the next round.",
+  "max_risk": "The height‑dependent alive bonus may cause the agent to descend too rapidly, leading to high vertical speed and increased crash rate. The stronger horizontal penalty could make the agent oscillate around the pad due to overshooting. The reduced crash penalty might lead to more crashes during early learning, but that is acceptable as it is part of the exploration process.",
+  "risk_mitigation": "Monitor vert_speed_abs, height, dist_to_pad, and crash rate. If vertical speed spikes > 2.0, increase the vertical velocity penalty weight (w_vy) slightly to smooth descent. If oscillations in dist_to_pad appear, add a small dead zone to the horizontal velocity penalty or reduce w_x back to 0.08. If crash rate exceeds 20%, consider increasing the success bonus (e.g., from 20 to 25) rather than increasing the crash penalty again."
+}

@@ -1,8 +1,0 @@
-{
-  "env_id": "MountainCarContinuous-v0-round0",
-  "total_timesteps": 1000000,
-  "n_envs": 4,
-  "elapsed_seconds": 2082.29,
-  "elapsed_minutes": 34.7,
-  "timestamp": "2026-05-08T23:45:16+08:00"
-}

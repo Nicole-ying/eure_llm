@@ -1,0 +1,18 @@
+{
+  "metrics_table_total_candidates": 5,
+  "metrics_table_selected": [
+    "action_force",
+    "heading",
+    "dist_to_goal",
+    "velocity_mag",
+    "reached_goal"
+  ],
+  "env_metrics_total_candidates": 5,
+  "env_metrics_selected": [
+    "velocity_mag",
+    "heading",
+    "action_force",
+    "dist_to_goal",
+    "reached_goal"
+  ]
+}
