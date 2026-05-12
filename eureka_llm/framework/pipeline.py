@@ -37,6 +37,7 @@ except Exception:
 _framework_dir = Path(__file__).resolve().parent
 if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
+from runtime_policy import compute_evidence_fingerprint, should_rerun_analyst
 
 from llm_call import call_llm, extract_reward_fn, save_artifacts
 from template_engine import (
@@ -525,16 +526,42 @@ def run_iteration(run_dir: Path, env_dir: Path, round_num: int,
                 print("  ERROR: Generator agent failed after retries!")
                 print("  [feedback-loop] Re-running Analyst with Generator failure context...")
                 from agents.analyst_agent import run_analyst_agent
-                gen_feedback = {"generator_failed": True, "recent_generator_response": gen_responses[-1] if gen_responses else ""}
-                (prev_round_dir / "generator_feedback.json").write_text(json.dumps(gen_feedback, ensure_ascii=False, indent=2), encoding="utf-8")
-                try:
-                    proposal = run_analyst_agent(prev_round_dir, round_num, memory_system, api_key, model, temperature=0.35)
-                    ctx["proposal"] = proposal
-                    gen_result = run_generator_agent(prev_round_dir, proposal, memory_system, api_key, model, temperature=0.25, constraints=constraints)
-                    code, gen_prompt, gen_responses = gen_result
-                except Exception as e:
-                    print(f"  [feedback-loop] Analyst revision for generator failure FAILED: {e}")
-                    code = None
+                validation_issues = []
+                if gen_responses:
+                    from agents.generator_agent import _extract_reward_code, validate_generated_code, validate_proposal_adherence
+                    extracted = _extract_reward_code(gen_responses[-1])
+                    if extracted:
+                        validation_issues.extend(validate_generated_code(extracted))
+                        validation_issues.extend(validate_proposal_adherence(extracted, proposal))
+                gen_feedback = {
+                    "generator_failed": True,
+                    "recent_generator_response": gen_responses[-1] if gen_responses else "",
+                    "validation_issues": validation_issues,
+                    "proposal": proposal,
+                }
+                evidence_fingerprint = compute_evidence_fingerprint(validation_issues, proposal)
+                gen_feedback["evidence_fingerprint"] = evidence_fingerprint
+
+                feedback_path = prev_round_dir / "generator_feedback.json"
+                prev_fingerprint = None
+                if feedback_path.exists():
+                    try:
+                        prev_fingerprint = json.loads(feedback_path.read_text("utf-8")).get("evidence_fingerprint")
+                    except Exception:
+                        prev_fingerprint = None
+                feedback_path.write_text(json.dumps(gen_feedback, ensure_ascii=False, indent=2), encoding="utf-8")
+
+                if not should_rerun_analyst(prev_fingerprint, evidence_fingerprint):
+                    print("  [feedback-loop] Skipping analyst re-run: no new evidence since previous generator failure.")
+                else:
+                    try:
+                        proposal = run_analyst_agent(prev_round_dir, round_num, memory_system, api_key, model, temperature=0.35)
+                        ctx["proposal"] = proposal
+                        gen_result = run_generator_agent(prev_round_dir, proposal, memory_system, api_key, model, temperature=0.25, constraints=constraints)
+                        code, gen_prompt, gen_responses = gen_result
+                    except Exception as e:
+                        print(f"  [feedback-loop] Analyst revision for generator failure FAILED: {e}")
+                        code = None
                 if code is None:
                     print("  Fallback: copying previous round's reward function.")
                     prev_reward = prev_round_dir / "reward_fn_source.py"

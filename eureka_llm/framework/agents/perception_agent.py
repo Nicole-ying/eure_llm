@@ -22,12 +22,6 @@ from prompt_guard import validate_zero_shot_output
 from prompt_compaction import load_prompt_policy, write_compaction_stats
 
 
-PERCEPTION_SYSTEM_PROMPT = """You are a Perception Agent — an AI that observes raw training data
-and produces concise, structured reports about agent behavior.
-
-You do NOT propose changes. You do NOT write code. You only observe and describe."""
-
-
 def build_perception_prompt(run_dir: Path, template_path: Path) -> str:
     """Build the perception prompt from training results and template."""
     # Dynamic path insert for direct imports (avoid relative import issues)
@@ -145,6 +139,13 @@ def run_perception_agent(run_dir: Path, api_key: str,
 
     # Save artifacts
     (run_dir / "perception_prompt.txt").write_text(prompt, encoding="utf-8")
+    try:
+        diagnostics = build_perception_diagnostics(run_dir)
+        (run_dir / "perception_diagnostics.json").write_text(
+            json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
     (run_dir / "perception_response.md").write_text(report, encoding="utf-8")
     (run_dir / "perception_report.md").write_text(report, encoding="utf-8")
     (run_dir / "perception_guard.json").write_text(
@@ -177,9 +178,10 @@ def run_perception_agent(run_dir: Path, api_key: str,
 
 
 def answer_perception_query(run_dir: Path, query: str) -> str:
-    """Answer targeted follow-up questions from other agents using structured data only.
+    """Answer targeted follow-up questions from other agents using structured data.
 
-    This is the Phase-2 bridge for Analyst ↔ Perception bidirectional communication.
+    Supports direct metric lookup (e.g., "mean_length", "action_magnitude_mean")
+    before falling back to themed summaries.
     """
     _import_dir = Path(__file__).resolve().parent.parent
     if str(_import_dir) not in sys.path:
@@ -194,17 +196,64 @@ def answer_perception_query(run_dir: Path, query: str) -> str:
     cross = derive_action_cross_metrics(traj, eval_history)
     q = (query or "").lower()
 
-    if any(k in q for k in ["efficiency", "action", "velocity"]):
-        return f"Perception follow-up (efficiency): {cross}"
+    metric_bank = {}
+    lengths = traj.get("lengths", {})
+    for k in ("mean", "min", "max", "std"):
+        if k in lengths:
+            metric_bank[f"length_{k}"] = lengths[k]
+            if k == "mean":
+                metric_bank["mean_length"] = lengths[k]
+    for k, v in traj.items():
+        if isinstance(v, (int, float)):
+            metric_bank[k] = v
+    if isinstance(cross, dict):
+        for k, v in cross.items():
+            if isinstance(v, (int, float)):
+                metric_bank[k] = v
+
+    requested = [name for name in metric_bank.keys() if name.lower() in q]
+    if requested:
+        pairs = {k: metric_bank[k] for k in requested[:8]}
+        return f"Perception metric lookup: {pairs}"
+
     if any(k in q for k in ["constraint", "principle", "violation"]):
         return f"Perception follow-up (violations): {violations}"
+    if any(k in q for k in ["efficiency", "action", "velocity"]):
+        return f"Perception follow-up (efficiency): {cross}"
     if any(k in q for k in ["length", "termination", "truncation"]):
-        return f"Perception follow-up (lengths): {traj.get('lengths', {})}"
+        return f"Perception follow-up (lengths): {lengths}"
     return (
         "Perception follow-up summary: "
-        f"n_episodes={traj.get('n_episodes', 0)}, lengths={traj.get('lengths', {})}, "
+        f"n_episodes={traj.get('n_episodes', 0)}, lengths={lengths}, "
         f"cross_metrics={cross}, violations={violations[:3]}"
     )
+
+
+def build_perception_diagnostics(run_dir: Path) -> dict:
+    """Build structured diagnostics from raw data for downstream agents."""
+    _import_dir = Path(__file__).resolve().parent.parent
+    if str(_import_dir) not in sys.path:
+        sys.path.insert(0, str(_import_dir))
+    from template_engine import load_training_data
+    from constraint_discovery import detect_constraint_violations, derive_action_cross_metrics
+
+    data = load_training_data(run_dir)
+    traj = data.get("traj_summary", {})
+    eval_history = data.get("eval_history", [])
+    violations = detect_constraint_violations(traj, eval_history)
+    cross = derive_action_cross_metrics(traj, eval_history)
+    lengths = traj.get("lengths", {})
+    diagnostics = {
+        "n_episodes": traj.get("n_episodes", 0),
+        "lengths": lengths,
+        "mean_length": lengths.get("mean"),
+        "cross_metrics": cross,
+        "constraint_violations": violations,
+    }
+    for k, v in traj.items():
+        if isinstance(v, (int, float)):
+            diagnostics[k] = v
+    return diagnostics
 
 
 def _extract_key_metrics_from_report(report: str) -> dict:

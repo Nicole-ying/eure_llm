@@ -28,10 +28,12 @@ from llm_call import call_llm
 from memory.memory_system import MemorySystem
 from prompt_guard import validate_zero_shot_output
 from prompt_compaction import load_prompt_policy, summarize_structured_lines, write_compaction_stats
+from prompt_harness import build_contract_block
+from context_packet import build_evidence_packet
 
-ANALYST_SYSTEM_PROMPT = """You are the Analyst Agent — the core reasoning engine of a multi-agent
-reward function design system. You use a Thought → Action → Observation loop
-to diagnose training problems and produce structured proposals."""
+ANALYST_SYSTEM_PROMPT = (
+    "You are the Analyst Agent. Use evidence to propose minimal, concrete reward-code changes."
+)
 
 def build_analyst_prompt(run_dir: Path, round_num: int,
                           memory_system: MemorySystem) -> tuple[str, dict]:
@@ -148,16 +150,29 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
         sections.append(summarized)
         sections.append("```")
         sections.append("")
+    validation_issues = _load_generator_validation_issues(run_dir)
+    if validation_issues:
+        sections.append("### Must-Fix Generator Validation Issues")
+        for i, issue in enumerate(validation_issues, 1):
+            sections.append(f"{i}. {issue}")
+        sections.append("")
 
     if recent_history:
         sections.append("### Recent Round History")
         sections.append(recent_history)
         sections.append("")
 
+    actionable_lessons = []
     if lessons:
         sections.append("### Cross-Round Lessons (MEMORY.md)")
         sections.append(lessons)
         sections.append("")
+        actionable_lessons = _extract_actionable_lessons(lessons)
+        if actionable_lessons:
+            sections.append("### Mandatory Lesson Carry-Over")
+            for i, item in enumerate(actionable_lessons, 1):
+                sections.append(f"{i}. {item}")
+            sections.append("")
     if analyst_belief.get("history"):
         sections.append("### Analyst Persistent Belief State")
         sections.append("```json")
@@ -165,11 +180,46 @@ def build_analyst_prompt(run_dir: Path, round_num: int,
         sections.append("```")
         sections.append("")
 
+    diagnostics = {}
+    diag_path = run_dir / "perception_diagnostics.json"
+    if diag_path.exists():
+        try:
+            diagnostics = json.loads(diag_path.read_text("utf-8"))
+        except Exception:
+            diagnostics = {}
+
+    sections.append(build_evidence_packet(
+        diagnostics=diagnostics,
+        must_fix_issues=validation_issues,
+        mandatory_lessons=actionable_lessons if lessons else [],
+        max_items=5,
+        strategy="strict",
+    ))
+    sections.append("")
+
+    contract = build_contract_block(
+        agent="Analyst",
+        objective="Produce a minimal, high-confidence reward-change proposal grounded in evidence.",
+        required_outputs=[
+            "Valid JSON proposal with changed_count <= 3",
+            "Concrete `new_code` for each proposed change",
+            "Risk and mitigation tied to observed evidence",
+        ],
+        hard_constraints=[
+            "If Must-Fix issues exist, each change must address at least one issue",
+            "If Mandatory Lesson Carry-Over exists, proposal must not contradict it",
+            "Prefer 1-2 focused changes over broad rewrites",
+        ],
+    )
+    sections.append(contract)
+    sections.append("")
+
     # Instructions for the ReAct loop
     sections.append("---")
     sections.append("""## Begin Your Analysis
 
 Use the Thought → Action → Observation loop.
+Focus discipline: identify ONE primary root cause first, then propose only the minimum edits needed.
 
 **Thought:** What is happening? What is the key problem?
 **Action:** query_memory | calculate_reward_budget | compare_rounds | analyze_efficiency | detect_principle_violation | ask_perception
@@ -192,9 +242,31 @@ When you have enough information, output your FINAL ANSWER as a JSON proposal:
 
 CRITICAL: changed_count must be ≤ 3. Prefer 1-2 changes over 3.
 metrics_fn MUST be present in the generated code.
+If "Must-Fix Generator Validation Issues" exists, every proposed change MUST directly address at least one listed issue.
+Use concrete `new_code` lines, not abstract principles only.
+If "Mandatory Lesson Carry-Over" exists, do not contradict those items; reflect them in proposed_changes or risk_mitigation.
 """)
 
     return "\n".join(sections), compaction_stats
+
+
+def _extract_actionable_lessons(lessons_text: str) -> list[str]:
+    lines = [ln.strip("- *") for ln in (lessons_text or "").splitlines() if ln.strip()]
+    kws = ("remove", "delete", "must", "avoid", "terminal", "condition", "gate", "only if")
+    picked = [ln for ln in lines if any(k in ln.lower() for k in kws)]
+    return picked[:5]
+
+
+def _load_generator_validation_issues(run_dir: Path) -> list[str]:
+    path = run_dir / "generator_feedback.json"
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except Exception:
+        return []
+    issues = payload.get("validation_issues") or []
+    return [str(x) for x in issues if str(x).strip()][:8]
 
 
 class ReActLoop:
@@ -207,7 +279,7 @@ class ReActLoop:
     def __init__(self, system_prompt: str, memory_system: MemorySystem,
                  behavior_metrics: dict, component_means: dict,
                  reward_code: str, api_key: str, model: str = "deepseek-reasoner",
-                 perception_query_fn=None,
+                 perception_query_fn=None, diagnostics: dict | None = None,
                  max_steps: int = 10):
         self.system_prompt = system_prompt
         self.memory = memory_system
@@ -217,6 +289,7 @@ class ReActLoop:
         self.api_key = api_key
         self.model = model
         self.perception_query_fn = perception_query_fn
+        self.diagnostics = diagnostics or {}
         self.max_steps = max_steps
         self.conversation_history = []
 
@@ -340,9 +413,9 @@ class ReActLoop:
                 return f"Error comparing rounds: {e}"
 
         elif name == "analyze_efficiency":
-            action_mag = self.behavior_metrics.get("action_magnitude_mean")
-            velocity = self.behavior_metrics.get("velocity_mean")
-            entropy = self.behavior_metrics.get("policy_entropy")
+            action_mag = self.behavior_metrics.get("action_magnitude_mean") or self.diagnostics.get("action_magnitude_mean")
+            velocity = self.behavior_metrics.get("velocity_mean") or self.diagnostics.get("velocity_mean")
+            entropy = self.behavior_metrics.get("policy_entropy") or self.diagnostics.get("policy_entropy")
             notes = []
             if action_mag is not None and velocity is not None:
                 ratio = velocity / max(abs(action_mag), 1e-6)
@@ -363,8 +436,14 @@ class ReActLoop:
             zero_std_components = [k for k, v in self.component_means.items() if isinstance(v, (int, float)) and abs(v) < 1e-9]
             if zero_std_components:
                 violations.append(f"inactive_component: near-zero components detected: {zero_std_components[:3]}")
+            for item in (self.diagnostics.get("constraint_violations") or [])[:3]:
+                if isinstance(item, dict):
+                    violations.append(
+                        f"constraint_violation: {item.get('principle', 'unknown')} "
+                        f"(severity={item.get('severity', 'n/a')})"
+                    )
             if not violations:
-                violations.append("No hard violation detected from parsed scalars; inspect perception narrative for alignment/coverage/efficiency patterns.")
+                violations.append("No hard violation detected from structured diagnostics.")
             return "\n".join(violations)
 
         elif name == "ask_perception":
@@ -389,6 +468,35 @@ class ReActLoop:
         return text
 
 
+
+def validate_proposal_focus(proposal: dict, must_fix_issues: list[str], mandatory_lessons: list[str]) -> list[str]:
+    """Check proposal is concrete and aligned with required issues/lessons."""
+    problems = []
+    changes = proposal.get("proposed_changes") or []
+    if not changes:
+        problems.append("No proposed_changes provided.")
+        return problems
+
+    change_text = "\n".join(
+        f"{c.get('component', '')}\n{c.get('new_code', '')}\n{c.get('reason', '')}"
+        for c in changes if isinstance(c, dict)
+    ).lower()
+
+    for issue in must_fix_issues:
+        tokens = [tok.lower() for tok in re.findall(r"[a-zA-Z_]{4,}", issue)[:4]]
+        if tokens and not any(tok in change_text for tok in tokens):
+            problems.append(f"Issue not addressed concretely: {issue}")
+
+    for lesson in mandatory_lessons:
+        lesson_tokens = [tok.lower() for tok in re.findall(r"[a-zA-Z_]{4,}", lesson)[:4]]
+        if lesson_tokens and not any(tok in change_text for tok in lesson_tokens):
+            problems.append(f"Mandatory lesson not reflected: {lesson}")
+
+    for c in changes:
+        if isinstance(c, dict) and not (c.get("new_code") or "").strip():
+            problems.append(f"Change missing new_code: {c.get('component','unknown')}")
+    return problems
+
 def run_analyst_agent(run_dir: Path, round_num: int,
                        memory_system: MemorySystem,
                        api_key: str, model: str = "deepseek-reasoner",
@@ -402,6 +510,16 @@ def run_analyst_agent(run_dir: Path, round_num: int,
     perception_path = run_dir / "perception_report.md"
     behavior_metrics = {}
     component_means = {}
+    diagnostics = {}
+    diag_path = run_dir / "perception_diagnostics.json"
+    if diag_path.exists():
+        try:
+            diagnostics = json.loads(diag_path.read_text("utf-8"))
+            for k, v in diagnostics.items():
+                if isinstance(v, (int, float)):
+                    behavior_metrics.setdefault(k, v)
+        except Exception:
+            diagnostics = {}
     if perception_path.exists():
         report = perception_path.read_text("utf-8")
         _extract_metrics_from_report(report, behavior_metrics, component_means)
@@ -430,6 +548,7 @@ def run_analyst_agent(run_dir: Path, round_num: int,
         api_key=api_key,
         model=model,
         perception_query_fn=_perception_query,
+        diagnostics=diagnostics,
     )
 
     result_text, conversation_history = loop.run(temperature=temperature)
@@ -455,6 +574,30 @@ def run_analyst_agent(run_dir: Path, round_num: int,
             "max_risk": "Unknown",
             "risk_mitigation": "Monitor training metrics closely",
         }
+
+    must_fix_issues = _load_generator_validation_issues(run_dir)
+    mandatory_lessons = _extract_actionable_lessons(memory_system.get_recent_lessons(6))
+    focus_problems = validate_proposal_focus(proposal, must_fix_issues, mandatory_lessons)
+    if focus_problems:
+        repair_prompt = (
+            system_prompt
+            + "\n\n[REPAIR REQUIRED]\n"
+            + "Your previous JSON did not satisfy required issue/lesson coverage.\n"
+            + "Problems:\n- " + "\n- ".join(focus_problems[:8])
+            + "\nReturn ONLY corrected JSON proposal with concrete new_code lines."
+        )
+        repaired_text = call_llm(repair_prompt, api_key, model, max(0.15, temperature - 0.2))
+        try:
+            proposal = json.loads(loop._extract_json(repaired_text))
+            focus_problems = validate_proposal_focus(proposal, must_fix_issues, mandatory_lessons)
+        except Exception:
+            pass
+
+    # Persist proposal focus guard for debugging
+    (run_dir / "analyst_proposal_focus_guard.json").write_text(
+        json.dumps({"passed": len(focus_problems) == 0, "problems": focus_problems[:12]}, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
 
     # Validate changed_count constraint
     if proposal.get("changed_count", 0) > 3:

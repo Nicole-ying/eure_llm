@@ -26,10 +26,9 @@ if str(_framework_dir) not in sys.path:
     sys.path.insert(0, str(_framework_dir))
 from llm_call import call_llm
 from prompt_compaction import load_prompt_policy, summarize_structured_lines, write_compaction_stats
+from prompt_harness import build_contract_block
 
 
-GENERATOR_SYSTEM_PROMPT = """You are the Generator Agent — an AI that translates structured proposals
-into correct, runnable Python code. You apply precise, targeted changes."""
 def build_generator_prompt(run_dir: Path, proposal: dict,
                             memory_system,
                             constraints: str = "") -> tuple[str, dict]:
@@ -63,7 +62,24 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
         )
 
     # Build the sections
+    contract = build_contract_block(
+        agent="Generator",
+        objective="Translate analyst proposal into runnable reward code with no drift.",
+        required_outputs=[
+            "Python code with compute_reward and metrics_fn",
+            "All analyst new_code edits applied",
+            "No simulator object persistence anti-patterns",
+        ],
+        hard_constraints=[
+            "Do not introduce unrelated reward terms",
+            "Keep signatures and return contracts valid",
+            "If proposal conflicts exist, choose explicit proposal edits",
+        ],
+    )
+
     sections = [
+        contract,
+        "",
         template,
         "",
         "## Current Reward Function",
@@ -86,13 +102,42 @@ def build_generator_prompt(run_dir: Path, proposal: dict,
         sections.append("")
         sections.append("## Perception Report (for context)")
         sections.append(perception)
-
     if constraints:
         sections.append("")
         sections.append("## Environment Constraints")
         sections.append(constraints)
 
     return "\n".join(sections), stats
+
+
+def validate_proposal_adherence(code: str, proposal: dict) -> list[str]:
+    """Lightweight check that generated code contains analyst-requested code edits."""
+    issues = []
+    for change in proposal.get("proposed_changes", []) or []:
+        new_code = (change.get("new_code") or "").strip()
+        if not new_code:
+            continue
+        target = new_code.split("#", 1)[0].strip()
+        if not target:
+            continue
+        if target not in code:
+            component = change.get("component", "unknown_component")
+            issues.append(f"Proposal change not applied: {component} -> `{target}`")
+            continue
+
+        # Semantic-ish assignment check: if new_code has `lhs = rhs`, ensure rhs survived
+        m_new = re.match(r"\s*([A-Za-z_]\w*)\s*=\s*([^#\n]+)", target)
+        if m_new:
+            lhs, rhs = m_new.group(1).strip(), m_new.group(2).strip()
+            assign_pattern = rf"{re.escape(lhs)}\s*=\s*{re.escape(rhs)}(?:\s|$)"
+            if not re.search(assign_pattern, code):
+                issues.append(f"Assignment mismatch for `{lhs}`: expected `{rhs}`")
+
+        # If current_code is explicit, ensure obvious anti-pattern is removed
+        old_code = (change.get("current_code") or "").split("#", 1)[0].strip()
+        if old_code and old_code != target and old_code in code:
+            issues.append(f"Old pattern still present for `{change.get('component', 'unknown_component')}`: `{old_code}`")
+    return issues
 
 
 def validate_generated_code(code: str) -> list[str]:
@@ -184,6 +229,7 @@ def run_generator_agent(run_dir: Path, proposal: dict,
             return None, prompt, all_responses
 
         issues = validate_generated_code(code)
+        issues.extend(validate_proposal_adherence(code, proposal))
         if not issues:
             try:
                 memory_system.update_belief("generator", {
